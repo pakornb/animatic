@@ -26,25 +26,32 @@ main{flex:1;display:flex;flex-direction:column;min-height:0}
 .preview img{max-width:100%;max-height:100%;object-fit:contain}
 .preview .meta{position:absolute;left:12px;bottom:12px;font-family:var(--mono);font-size:11px;background:rgba(0,0,0,.55);padding:5px 9px;border-radius:5px;border:1px solid var(--line)}
 
-.timeline-wrap{border-top:1px solid var(--line);background:var(--panel);padding:10px 14px}
-.timeline{position:relative;display:flex;gap:2px;height:64px}
-.block{position:relative;min-width:6px;background:#000;border:1px solid var(--line);border-radius:3px;overflow:hidden;cursor:pointer;flex:0 0 auto}
-.block .boards{position:absolute;inset:0;display:flex;overflow:hidden}
-.block .boards canvas{height:100%;width:auto;flex:0 0 auto;opacity:.85;border-right:1px solid rgba(0,0,0,.6)}
-.block .cap{position:absolute;left:2px;bottom:1px;font-family:var(--mono);font-size:9px;color:#fff;background:rgba(0,0,0,.6);padding:0 3px;border-radius:2px;max-width:calc(100% - 4px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;z-index:2}
-.block.active{border:2px solid var(--head);box-shadow:0 0 0 1px var(--head)}
-.playhead{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--head);z-index:3;pointer-events:none;box-shadow:0 0 4px var(--head)}
-.target-marker{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--cut);pointer-events:none}
+.timeline-wrap{border-top:1px solid var(--line);background:var(--panel);padding:8px 14px}
+.tl-topbar{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.tl-tools{margin-left:auto;display:flex;align-items:center;gap:4px}
+.tl-tools .sep{width:1px;height:16px;background:var(--line);margin:0 4px}
+.timeline-scroll{position:relative;overflow-x:auto;overflow-y:hidden;background:#0e1013;border:1px solid var(--line);border-radius:5px}
+.timeline-scroll::-webkit-scrollbar{height:10px}.timeline-scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px}
+.tl-inner{position:relative;height:92px;min-width:100%}
+.cspan{position:absolute;top:0;height:12px;border-radius:2px;overflow:hidden;cursor:pointer;display:flex;align-items:center}
+.cspan.c0{background:rgba(78,168,222,.35)} .cspan.c1{background:rgba(255,138,61,.32)}
+.cspan span{font-family:var(--mono);font-size:9px;color:#fff;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot{position:absolute;top:16px;height:60px;background:#000;border:1px solid var(--line);border-left:2px solid var(--head);border-radius:2px;overflow:hidden;cursor:pointer}
+.slot canvas{height:100%;width:auto;display:block;opacity:.9}
+.slot.active{border-color:var(--cut);box-shadow:0 0 0 1px var(--cut)}
+.mk{position:absolute;bottom:0;width:2px;height:14px;cursor:pointer}
+.mk.board{background:var(--faint)} .mk.shot{background:var(--cut);height:18px}
+.playhead{position:absolute;top:0;bottom:12px;width:2px;background:var(--head);z-index:5;pointer-events:none;box-shadow:0 0 4px var(--head)}
+.target-marker{position:absolute;top:0;bottom:12px;width:2px;background:var(--cut);opacity:.7;pointer-events:none}
 
 .transport{display:flex;align-items:center;gap:6px;padding:8px 14px;border-top:1px solid var(--line);background:var(--panel)}
 .tbtn{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 9px;border-radius:5px;cursor:pointer;min-width:30px}
 .tbtn:hover{border-color:var(--muted)}
+.tbtn:disabled{opacity:.4;cursor:not-allowed}
 .tbtn.play{background:var(--cut);color:#1a1206;border-color:var(--cut);min-width:40px}
 .tbtn.sm{padding:3px 6px;font-size:10.5px;min-width:0}
 .transport #scrub{flex:1;accent-color:var(--head)}
 .clock{font-family:var(--mono);font-size:12px;min-width:130px;text-align:right}
-.hold{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
-.hold input{width:auto}
 
 .audio-lane{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
 .audio-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
@@ -52,7 +59,24 @@ main{flex:1;display:flex;flex-direction:column;min-height:0}
 #wave{width:100%;height:44px;display:block;background:var(--panel2);border:1px solid var(--line);border-radius:4px;cursor:ew-resize;touch-action:none}
 .slip{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap}
 .slip-label{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
-.slip-val{font-family:var(--mono);font-size:12px;color:var(--head);min-width:120px;text-align:center}
+.slip-val{font-family:var(--mono);font-size:12px;color:var(--head);min-width:150px;text-align:center}
+
+/* inspector board cells */
+.board-cell{width:calc(33.3% - 3px);display:flex;flex-direction:column;gap:3px}
+.board-cell .board{width:100%;height:auto;aspect-ratio:16/9;border:1px solid var(--line);border-radius:3px;cursor:pointer;background:#000}
+.board-cell.sel .board{border:2px solid var(--head)}
+.board-cell.off .board{opacity:.35;filter:grayscale(1)}
+.board-row{display:flex;align-items:center;gap:4px}
+.board-row .mini{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-family:var(--mono);font-size:9px;padding:2px 3px;border-radius:3px;cursor:pointer}
+.board-row .mini:hover{border-color:var(--muted);color:var(--text)}
+.board-row .wt{width:42px;text-align:center;font-size:11px}
+.cut-tag{font-family:var(--mono);font-size:9px;background:var(--cut);color:#1a1206;padding:1px 5px;border-radius:3px;vertical-align:middle}
+.btn.ghost.sm.on{border-color:var(--good);color:var(--good)}
+.btn.ghost.sm.off-btn{border-color:var(--cut);color:var(--cut)}
+.len-wrap{display:flex;align-items:center;gap:8px}
+
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:9px 16px;border-radius:7px;font-family:var(--mono);font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
+.toast.show{opacity:1}
 
 /* load screen */
 .drop{margin:auto;width:min(560px,86%);border:1px dashed var(--line);border-radius:10px;padding:40px 30px;text-align:center;background:var(--panel)}

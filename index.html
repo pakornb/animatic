@@ -55,13 +55,24 @@
           <button class="tbtn" id="toEnd" title="end (Cmd/Ctrl+→)">⏭</button>
           <input type="range" id="scrub" min="0" max="30" step="0.01" value="0" />
           <span class="clock" id="clock">0:00.00 / 0:30.00</span>
-          <label class="hold"><input type="checkbox" id="holdFirst" /> hold 1st board</label>
           <button class="btn ghost sm" id="loadAudioBtn0" title="load scratch VO / music">Load audio…</button>
         </div>
 
         <div class="timeline-wrap">
-          <div class="budget-row"><span class="budget" id="budget"></span></div>
-          <div class="timeline" id="timeline"><div class="playhead" id="playhead"></div></div>
+          <div class="tl-topbar">
+            <span class="budget" id="budget"></span>
+            <span class="tl-tools">
+              <button class="tbtn sm" id="undoBtn" title="undo (Cmd/Ctrl+Z)" disabled>↶</button>
+              <button class="tbtn sm" id="redoBtn" title="redo (Shift+Cmd/Ctrl+Z)" disabled>↷</button>
+              <span class="sep"></span>
+              <button class="tbtn sm" id="zoomOut" title="zoom out">−</button>
+              <button class="tbtn sm" id="zoomFit" title="fit">fit</button>
+              <button class="tbtn sm" id="zoomIn" title="zoom in">+</button>
+            </span>
+          </div>
+          <div class="timeline-scroll" id="timeline">
+            <div class="tl-inner" id="tlInner"><div class="playhead" id="playhead"></div></div>
+          </div>
 
           <div class="audio-lane hidden" id="audioLane">
             <div class="audio-head">
@@ -71,10 +82,10 @@
             </div>
             <canvas id="wave" title="drag to slip (snaps to frames)"></canvas>
             <div class="slip">
-              <span class="slip-label">audio slip</span>
+              <span class="slip-label">audio</span>
               <button class="tbtn sm" id="slipMinus1">−1f</button>
               <button class="tbtn sm" id="slipMinusS">−0.1s</button>
-              <span class="slip-val" id="slipVal">+0f</span>
+              <span class="slip-val" id="slipVal">offset +0f</span>
               <button class="tbtn sm" id="slipPlusS">+0.1s</button>
               <button class="tbtn sm" id="slipPlus1">+1f</button>
               <button class="btn ghost sm" id="setSync" title="set audio start to the current frame">set sync to playhead</button>

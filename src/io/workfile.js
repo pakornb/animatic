@@ -35,6 +35,9 @@ export async function saveWorkFile(onProgress) {
     diffs: P.diffs.map((d) => Math.round(d * 100) / 100),
     manualAdd: [...P.manualAdd], manualRemove: [...P.manualRemove],
     meta: [...P.meta.entries()],
+    boardWeights: [...P.boardWeights.entries()],
+    boardDisabled: [...P.boardDisabled],
+    shotDisabled: [...P.shotDisabled],
     audio,
     frames,
   };
@@ -64,6 +67,9 @@ export async function openWorkFile(file, onProgress) {
   P.manualAdd = new Set(doc.manualAdd || []);
   P.manualRemove = new Set(doc.manualRemove || []);
   P.meta = new Map(doc.meta || []);
+  P.boardWeights = new Map(doc.boardWeights || []);
+  P.boardDisabled = new Set(doc.boardDisabled || []);
+  P.shotDisabled = new Set(doc.shotDisabled || []);
   P.source = 'workfile';
 
   P.audio = null;

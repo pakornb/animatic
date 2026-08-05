@@ -13,6 +13,9 @@ export const project = {
   manualAdd: new Set(),   // filenames of forced shot starts
   manualRemove: new Set(),// filenames of removed boundaries
   meta: new Map(),        // startFilename -> { tag, note, len(seconds) }
+  boardWeights: new Map(),// filename -> weight (default 1) within its shot
+  boardDisabled: new Set(),// filenames of disabled boards
+  shotDisabled: new Set(),// shot ids (name key or start filename) that are cut
   stages: ['previs', 'anim', 'light', 'comp'],
   baseName: 'sequence',   // derived from first file / zip name
   source: null,           // 'files' | 'zip' | 'workfile'
@@ -104,12 +107,25 @@ export function computeShots(p = project) {
 export function shotMeta(p, sh) {
   return p.meta.get(p.frames[sh.start].name) || { tag: '', note: '', len: null };
 }
-
 export function setShotMeta(p, sh, key, val) {
   const fn = p.frames[sh.start].name;
   const m = p.meta.get(fn) || { tag: '', note: '', len: null };
   m[key] = val;
   p.meta.set(fn, m);
+}
+
+export function shotId(p, sh) { return sh.name || p.frames[sh.start].name; }
+export function isShotDisabled(p, sh) { return p.shotDisabled.has(shotId(p, sh)); }
+export function isBoardDisabled(p, fi) { return p.boardDisabled.has(p.frames[fi].name); }
+export function boardWeight(p, fi) {
+  const w = p.boardWeights.get(p.frames[fi].name);
+  return w == null || w <= 0 ? 1 : w;
+}
+export function enabledBoards(p, sh) {
+  if (isShotDisabled(p, sh)) return [];
+  const out = [];
+  for (let f = sh.start; f <= sh.end; f++) if (!isBoardDisabled(p, f)) out.push(f);
+  return out;
 }
 
 export function lenToUnit(p, sec) {
@@ -119,75 +135,98 @@ export function unitToSec(p, v) {
   return p.lenUnit === 'frames' ? v / p.fps : v;
 }
 
-// Fit-to-spot: fill only shots WITHOUT a manual length so the WHOLE spot lands
-// exactly on target. Locked (manually set) shots are respected; the remaining
-// budget is distributed by board weight, floored, then normalized to hit the
-// target precisely. If the floor can't fit, it scales the floor down rather
-// than overshooting.
+// A shot's total on-screen seconds: manual override, else enabled-board count / fps.
+export function shotLenSec(p, sh) {
+  const m = shotMeta(p, sh);
+  if (m.len != null) return m.len;
+  return enabledBoards(p, sh).length / p.fps;
+}
+
+// Fit-to-spot across ENABLED shots; fills only shots without a manual length,
+// then normalizes so the whole spot lands exactly on target.
 export function autoEstimate(p = project, { minSec = 0.5 } = {}) {
+  const active = p.shots.filter((sh) => enabledBoards(p, sh).length > 0);
   const unset = [];
   let lockedTotal = 0;
-  for (const sh of p.shots) {
+  for (const sh of active) {
     const m = shotMeta(p, sh);
-    if (m.len != null) lockedTotal += m.len;
-    else unset.push(sh);
+    if (m.len != null) lockedTotal += m.len; else unset.push(sh);
   }
-  if (!unset.length) return { filled: 0, total: lockedTotal, over: lockedTotal - p.spotSeconds };
-
+  if (!unset.length) {
+    const t = active.reduce((s, sh) => s + shotLenSec(p, sh), 0);
+    return { filled: 0, total: t, over: t - p.spotSeconds };
+  }
   let budget = p.spotSeconds - lockedTotal;
-  if (budget <= 0) budget = 0; // locked shots already exceed the spot; give unset ~floor
+  if (budget <= 0) budget = 0;
   let floor = minSec;
-  if (unset.length * floor > budget && budget > 0) floor = budget / unset.length; // shrink floor to fit
-
-  const weightTotal = unset.reduce((s, sh) => s + sh.count, 0) || unset.length;
-  // first pass: weighted with floor
-  const raw = unset.map((sh) => Math.max(floor, budget * (sh.count / weightTotal)));
+  if (unset.length * floor > budget && budget > 0) floor = budget / unset.length;
+  const weightTotal = unset.reduce((s, sh) => s + enabledBoards(p, sh).length, 0) || unset.length;
+  const raw = unset.map((sh) => Math.max(floor, budget * (enabledBoards(p, sh).length / weightTotal)));
   const rawSum = raw.reduce((a, b) => a + b, 0) || 1;
-  // normalize so unset shots sum exactly to the budget
   unset.forEach((sh, i) => {
     const len = budget > 0 ? (raw[i] / rawSum) * budget : floor;
     setShotMeta(p, sh, 'len', Math.round(len * 1000) / 1000);
   });
-
-  let total = 0;
-  for (const sh of p.shots) total += shotLenSec(p, sh);
+  const total = active.reduce((s, sh) => s + shotLenSec(p, sh), 0);
   return { filled: unset.length, total, over: total - p.spotSeconds };
 }
 
-// The on-screen length of a shot in seconds (manual override or frame-count default).
-export function shotLenSec(p, sh) {
-  const m = shotMeta(p, sh);
-  return m.len != null ? m.len : sh.count / p.fps;
-}
-
-// Cumulative start time (seconds) for each shot, and total.
+// Full timeline: per-board placements, shot color spans, collapse markers for
+// disabled boards/shots (zero width — no gaps).
 export function timeline(p = project) {
-  let t = 0;
-  const rows = p.shots.map((sh) => {
-    const len = shotLenSec(p, sh);
-    const row = { sh, startSec: t, len };
-    t += len;
-    return row;
+  const boards = [];
+  const spans = [];
+  const markers = [];
+  let t = 0, colorIdx = 0;
+  p.shots.forEach((sh, si) => {
+    if (isShotDisabled(p, sh)) { markers.push({ atSec: t, kind: 'shot', label: shotId(p, sh) }); return; }
+    const enabled = enabledBoards(p, sh);
+    if (!enabled.length) { markers.push({ atSec: t, kind: 'shot', label: shotId(p, sh) }); return; }
+    const shotLen = shotLenSec(p, sh);
+    const sumW = enabled.reduce((s, fi) => s + boardWeight(p, fi), 0) || 1;
+    const spanStart = t;
+    for (let fi = sh.start; fi <= sh.end; fi++) {
+      if (isBoardDisabled(p, fi)) { markers.push({ atSec: t, kind: 'board', label: p.frames[fi].name }); continue; }
+      const len = shotLen * (boardWeight(p, fi) / sumW);
+      boards.push({ fi, startSec: t, len, shotIndex: si });
+      t += len;
+    }
+    spans.push({ shotIndex: si, name: sh.name || `S${si + 1}`, startSec: spanStart, len: t - spanStart, colorIdx: colorIdx % 2 });
+    colorIdx++;
   });
-  return { rows, total: t };
+  return { boards, spans, markers, total: t };
 }
 
-// Which shot + board is on screen at global time `sec`.
-// holdFirst: show only the first board of a multi-board shot (else even slideshow).
-export function resolveAt(p, sec, holdFirst = false) {
-  const { rows, total } = timeline(p);
-  if (!rows.length) return null;
-  let idx = 0;
-  for (let i = 0; i < rows.length; i++) { if (rows[i].startSec <= sec + 1e-6) idx = i; else break; }
-  const row = rows[idx];
-  const sh = row.sh;
-  let frame = sh.start;
-  if (!holdFirst && sh.count > 1 && row.len > 0) {
-    const within = clampNum(sec - row.startSec, 0, row.len);
-    const b = Math.min(sh.count - 1, Math.floor((within / row.len) * sh.count));
-    frame = sh.start + b;
-  }
-  return { shotIndex: idx, shot: sh, frame, startSec: row.startSec, len: row.len, total };
+// Which board is on screen at global time `sec`.
+export function resolveAt(p, sec) {
+  const { boards, total } = timeline(p);
+  if (!boards.length) return null;
+  let b = boards[0];
+  for (let i = 0; i < boards.length; i++) { if (boards[i].startSec <= sec + 1e-6) b = boards[i]; else break; }
+  return { frame: b.fi, shotIndex: b.shotIndex, startSec: b.startSec, len: b.len, total };
 }
 
-function clampNum(v, a, b) { return Math.max(a, Math.min(b, v)); }
+// ---- undo/redo snapshot of light state (never the image blobs) ----
+export function captureState(p = project) {
+  return JSON.stringify({
+    groupMode: p.groupMode, threshold: p.threshold, fps: p.fps,
+    lenUnit: p.lenUnit, spotSeconds: p.spotSeconds, stages: p.stages,
+    manualAdd: [...p.manualAdd], manualRemove: [...p.manualRemove],
+    meta: [...p.meta.entries()],
+    boardWeights: [...p.boardWeights.entries()],
+    boardDisabled: [...p.boardDisabled], shotDisabled: [...p.shotDisabled],
+    audio: p.audio ? { offsetSec: p.audio.offsetSec, inSec: p.audio.inSec, outSec: p.audio.outSec } : null,
+  });
+}
+export function applyState(p, snap) {
+  const s = JSON.parse(snap);
+  p.groupMode = s.groupMode; p.threshold = s.threshold; p.fps = s.fps;
+  p.lenUnit = s.lenUnit; p.spotSeconds = s.spotSeconds; p.stages = s.stages || p.stages;
+  p.manualAdd = new Set(s.manualAdd); p.manualRemove = new Set(s.manualRemove);
+  p.meta = new Map(s.meta);
+  p.boardWeights = new Map(s.boardWeights || []);
+  p.boardDisabled = new Set(s.boardDisabled || []);
+  p.shotDisabled = new Set(s.shotDisabled || []);
+  if (p.audio && s.audio) { p.audio.offsetSec = s.audio.offsetSec; p.audio.inSec = s.audio.inSec; p.audio.outSec = s.audio.outSec; }
+  computeShots(p);
+}
