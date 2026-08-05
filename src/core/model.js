@@ -119,9 +119,11 @@ export function unitToSec(p, v) {
   return p.lenUnit === 'frames' ? v / p.fps : v;
 }
 
-// Fit-to-spot: fill only shots WITHOUT a manual length, distributing the
-// remaining time (spot - sum of locked shots) weighted by board count, with a
-// minimum-length clamp. Locked (manually set) shots are never touched.
+// Fit-to-spot: fill only shots WITHOUT a manual length so the WHOLE spot lands
+// exactly on target. Locked (manually set) shots are respected; the remaining
+// budget is distributed by board weight, floored, then normalized to hit the
+// target precisely. If the floor can't fit, it scales the floor down rather
+// than overshooting.
 export function autoEstimate(p = project, { minSec = 0.5 } = {}) {
   const unset = [];
   let lockedTotal = 0;
@@ -130,18 +132,26 @@ export function autoEstimate(p = project, { minSec = 0.5 } = {}) {
     if (m.len != null) lockedTotal += m.len;
     else unset.push(sh);
   }
-  if (!unset.length) return { filled: 0, over: lockedTotal - p.spotSeconds };
+  if (!unset.length) return { filled: 0, total: lockedTotal, over: lockedTotal - p.spotSeconds };
+
   let budget = p.spotSeconds - lockedTotal;
-  const minTotal = unset.length * minSec;
-  if (budget < minTotal) budget = minTotal; // don't go below the clamp; spot will run long
+  if (budget <= 0) budget = 0; // locked shots already exceed the spot; give unset ~floor
+  let floor = minSec;
+  if (unset.length * floor > budget && budget > 0) floor = budget / unset.length; // shrink floor to fit
+
   const weightTotal = unset.reduce((s, sh) => s + sh.count, 0) || unset.length;
-  for (const sh of unset) {
-    const raw = budget * (sh.count / weightTotal);
-    setShotMeta(p, sh, 'len', Math.max(minSec, Math.round(raw * 100) / 100));
-  }
+  // first pass: weighted with floor
+  const raw = unset.map((sh) => Math.max(floor, budget * (sh.count / weightTotal)));
+  const rawSum = raw.reduce((a, b) => a + b, 0) || 1;
+  // normalize so unset shots sum exactly to the budget
+  unset.forEach((sh, i) => {
+    const len = budget > 0 ? (raw[i] / rawSum) * budget : floor;
+    setShotMeta(p, sh, 'len', Math.round(len * 1000) / 1000);
+  });
+
   let total = 0;
   for (const sh of p.shots) total += shotLenSec(p, sh);
-  return { filled: unset.length, over: total - p.spotSeconds };
+  return { filled: unset.length, total, over: total - p.spotSeconds };
 }
 
 // The on-screen length of a shot in seconds (manual override or frame-count default).
@@ -161,3 +171,23 @@ export function timeline(p = project) {
   });
   return { rows, total: t };
 }
+
+// Which shot + board is on screen at global time `sec`.
+// holdFirst: show only the first board of a multi-board shot (else even slideshow).
+export function resolveAt(p, sec, holdFirst = false) {
+  const { rows, total } = timeline(p);
+  if (!rows.length) return null;
+  let idx = 0;
+  for (let i = 0; i < rows.length; i++) { if (rows[i].startSec <= sec + 1e-6) idx = i; else break; }
+  const row = rows[idx];
+  const sh = row.sh;
+  let frame = sh.start;
+  if (!holdFirst && sh.count > 1 && row.len > 0) {
+    const within = clampNum(sec - row.startSec, 0, row.len);
+    const b = Math.min(sh.count - 1, Math.floor((within / row.len) * sh.count));
+    frame = sh.start + b;
+  }
+  return { shotIndex: idx, shot: sh, frame, startSec: row.startSec, len: row.len, total };
+}
+
+function clampNum(v, a, b) { return Math.max(a, Math.min(b, v)); }

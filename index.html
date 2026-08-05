@@ -11,18 +11,16 @@
     <span class="base" id="baseName"></span>
     <div class="ctrl"><span>fps</span><input type="number" id="fps" min="1" max="120" value="24" /></div>
     <div class="ctrl"><span>spot</span><input type="number" id="spot" min="1" max="600" value="30" /><span>s</span></div>
-    <div class="ctrl">
-      <span>length</span>
+    <div class="ctrl"><span>length</span>
       <select id="lenUnit"><option value="sec">seconds</option><option value="frames">frames</option></select>
     </div>
-    <div class="ctrl">
-      <span>group</span>
+    <div class="ctrl"><span>group</span>
       <select id="groupMode">
         <option value="cuts">detected cuts</option>
         <option value="name">filename</option>
       </select>
     </div>
-    <button class="btn ghost sm" id="autoBtn" title="fill unset shot lengths to fit the spot">auto-estimate</button>
+    <button class="btn ghost sm" id="autoBtn" title="fill unset shot lengths to fit the spot exactly">auto-estimate</button>
     <button class="btn ghost sm" id="saveBtn" disabled>Save work</button>
     <button class="btn ghost sm" id="openWorkBtn">Open work</button>
     <span class="stats" id="stats"></span>
@@ -33,8 +31,7 @@
     <div class="preview" id="loadView">
       <div class="drop" id="drop">
         <h2>Drop a zip, an image sequence, or a work file</h2>
-        <p>Storyboard boards or rendered frames. Grouped into shots by filename
-           (e.g. <span style="font-family:var(--mono)">MCDS_10_001</span>) or detected cuts.</p>
+        <p>Grouped into shots by filename (e.g. <span style="font-family:var(--mono)">MCDS_10_001</span>) or detected cuts.</p>
         <button class="btn" id="pickBtn">Choose files…</button>
         <button class="btn ghost" id="pickZip">Choose zip…</button>
         <button class="btn ghost" id="openWorkBtn2">Open work file…</button>
@@ -47,11 +44,45 @@
           <img id="preview" alt="" />
           <div class="meta" id="previewMeta"></div>
         </div>
+
+        <div class="transport">
+          <button class="tbtn" id="toStart" title="start (Cmd/Ctrl+←)">⏮</button>
+          <button class="tbtn" id="prevShot" title="prev shot (Shift+←)">«</button>
+          <button class="tbtn" id="stepBack" title="step back (←)">◀|</button>
+          <button class="tbtn play" id="playBtn" title="play/pause (Space)">▶</button>
+          <button class="tbtn" id="stepFwd" title="step forward (→)">|▶</button>
+          <button class="tbtn" id="nextShot" title="next shot (Shift+→)">»</button>
+          <button class="tbtn" id="toEnd" title="end (Cmd/Ctrl+→)">⏭</button>
+          <input type="range" id="scrub" min="0" max="30" step="0.01" value="0" />
+          <span class="clock" id="clock">0:00.00 / 0:30.00</span>
+          <label class="hold"><input type="checkbox" id="holdFirst" /> hold 1st board</label>
+          <button class="btn ghost sm" id="loadAudioBtn0" title="load scratch VO / music">Load audio…</button>
+        </div>
+
         <div class="timeline-wrap">
           <div class="budget-row"><span class="budget" id="budget"></span></div>
-          <div class="timeline" id="timeline"></div>
+          <div class="timeline" id="timeline"><div class="playhead" id="playhead"></div></div>
+
+          <div class="audio-lane hidden" id="audioLane">
+            <div class="audio-head">
+              <button class="btn ghost sm" id="loadAudioBtn">Load audio…</button>
+              <span class="audio-name" id="audioName"></span>
+              <button class="btn ghost sm" id="useAudioLen" title="set spot length to audio length">use audio length</button>
+            </div>
+            <canvas id="wave" title="drag to slip (snaps to frames)"></canvas>
+            <div class="slip">
+              <span class="slip-label">audio slip</span>
+              <button class="tbtn sm" id="slipMinus1">−1f</button>
+              <button class="tbtn sm" id="slipMinusS">−0.1s</button>
+              <span class="slip-val" id="slipVal">+0f</span>
+              <button class="tbtn sm" id="slipPlusS">+0.1s</button>
+              <button class="tbtn sm" id="slipPlus1">+1f</button>
+              <button class="btn ghost sm" id="setSync" title="set audio start to the current frame">set sync to playhead</button>
+            </div>
+          </div>
         </div>
       </div>
+
       <aside class="inspector-panel">
         <div class="insp-scroll" id="inspector"></div>
       </aside>
@@ -63,6 +94,7 @@
   <input type="file" id="fileInput" multiple accept="image/*" />
   <input type="file" id="zipInput" accept=".zip,application/zip" />
   <input type="file" id="workInput" accept=".json,application/json" />
+  <input type="file" id="audioInput" accept="audio/*" />
 
   <script type="module" src="/src/editor/main.js"></script>
 </body>
