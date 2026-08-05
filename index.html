@@ -11,20 +11,29 @@
     <span class="base" id="baseName"></span>
     <div class="ctrl"><span>fps</span><input type="number" id="fps" min="1" max="120" value="24" /></div>
     <div class="ctrl"><span>spot</span><input type="number" id="spot" min="1" max="600" value="30" /><span>s</span></div>
-    <div class="ctrl"><span>length</span>
-      <select id="lenUnit"><option value="sec">seconds</option><option value="frames">frames</option></select>
-    </div>
-    <div class="ctrl"><span>group</span>
-      <select id="groupMode">
-        <option value="cuts">detected cuts</option>
-        <option value="name">filename</option>
-      </select>
-    </div>
-    <button class="btn ghost sm" id="autoBtn" title="fill unset shot lengths to fit the spot exactly">auto-estimate</button>
-    <button class="btn ghost sm" id="saveBtn" disabled>Save work</button>
-    <button class="btn ghost sm" id="openWorkBtn">Open work</button>
-    <span class="stats" id="stats"></span>
+    <span class="hspace"></span>
+    <button class="btn ghost sm" id="openWorkBtn">Open</button>
+    <button class="btn ghost sm" id="saveBtn" disabled>Save</button>
+    <button class="btn ghost sm" id="exportBtn" disabled title="mp4 / viewer / sheet export — added in the export step">Export ▾</button>
+    <span class="sep"></span>
+    <button class="tbtn sm" id="undoBtn" title="undo (Cmd/Ctrl+Z)" disabled>↶</button>
+    <button class="tbtn sm" id="redoBtn" title="redo (Shift+Cmd/Ctrl+Z)" disabled>↷</button>
+    <button class="tbtn sm" id="helpBtn" title="keyboard shortcuts">?</button>
     <span class="iso" id="iso">checking…</span>
+
+    <div class="help-pop hidden" id="helpPop">
+      <b>Shortcuts</b>
+      <div><span>Space</span> play / pause</div>
+      <div><span>← / →</span> step 1 frame</div>
+      <div><span>Shift + ← / →</span> prev / next shot</div>
+      <div><span>Cmd/Ctrl + ← / →</span> start / end</div>
+      <div><span>Cmd/Ctrl + Z</span> undo</div>
+      <div><span>Shift + Cmd/Ctrl + Z</span> redo</div>
+      <hr />
+      <div><span>drag tile ↕</span> retime board (others flex, pins hold)</div>
+      <div><span>click tile</span> select + seek</div>
+      <div><span>click marker</span> re-enable disabled board/shot</div>
+    </div>
   </header>
 
   <main>
@@ -46,13 +55,13 @@
         </div>
 
         <div class="transport">
-          <button class="tbtn" id="toStart" title="start (Cmd/Ctrl+←)">⏮</button>
+          <button class="tbtn" id="toStart" title="start">⏮</button>
           <button class="tbtn" id="prevShot" title="prev shot (Shift+←)">«</button>
           <button class="tbtn" id="stepBack" title="step back (←)">◀|</button>
           <button class="tbtn play" id="playBtn" title="play/pause (Space)">▶</button>
           <button class="tbtn" id="stepFwd" title="step forward (→)">|▶</button>
           <button class="tbtn" id="nextShot" title="next shot (Shift+→)">»</button>
-          <button class="tbtn" id="toEnd" title="end (Cmd/Ctrl+→)">⏭</button>
+          <button class="tbtn" id="toEnd" title="end">⏭</button>
           <input type="range" id="scrub" min="0" max="30" step="0.01" value="0" />
           <span class="clock" id="clock">0:00.00 / 0:30.00</span>
           <button class="btn ghost sm" id="loadAudioBtn0" title="load scratch VO / music">Load audio…</button>
@@ -61,10 +70,8 @@
         <div class="timeline-wrap">
           <div class="tl-topbar">
             <span class="budget" id="budget"></span>
+            <span class="hint">drag a tile up/down to retime · pins hold</span>
             <span class="tl-tools">
-              <button class="tbtn sm" id="undoBtn" title="undo (Cmd/Ctrl+Z)" disabled>↶</button>
-              <button class="tbtn sm" id="redoBtn" title="redo (Shift+Cmd/Ctrl+Z)" disabled>↷</button>
-              <span class="sep"></span>
               <button class="tbtn sm" id="zoomOut" title="zoom out">−</button>
               <button class="tbtn sm" id="zoomFit" title="fit">fit</button>
               <button class="tbtn sm" id="zoomIn" title="zoom in">+</button>
@@ -95,6 +102,24 @@
       </div>
 
       <aside class="inspector-panel">
+        <div class="timing-panel">
+          <div class="tp-title">Timing</div>
+          <div class="tp-row">
+            <label>group
+              <select id="groupMode">
+                <option value="cuts">detected cuts</option>
+                <option value="name">filename</option>
+              </select>
+            </label>
+            <label>length
+              <select id="lenUnit"><option value="sec">seconds</option><option value="frames">frames</option></select>
+            </label>
+          </div>
+          <div class="tp-row">
+            <button class="btn ghost sm" id="autoBtn" title="give every unpinned board an equal share to fill the spot">auto-estimate</button>
+            <button class="btn ghost sm" id="rebalBtn" title="scale unpinned boards so the total hits the spot">rebalance</button>
+          </div>
+        </div>
         <div class="insp-scroll" id="inspector"></div>
       </aside>
     </div>

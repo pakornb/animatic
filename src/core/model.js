@@ -13,9 +13,11 @@ export const project = {
   manualAdd: new Set(),   // filenames of forced shot starts
   manualRemove: new Set(),// filenames of removed boundaries
   meta: new Map(),        // startFilename -> { tag, note, len(seconds) }
-  boardWeights: new Map(),// filename -> weight (default 1) within its shot
+  boardWeights: new Map(),// (legacy, unused) filename -> weight
+  boardDur: new Map(),    // filename -> on-screen seconds (source of truth for timing)
   boardDisabled: new Set(),// filenames of disabled boards
   shotDisabled: new Set(),// shot ids (name key or start filename) that are cut
+  pinned: new Set(),      // filenames whose duration is locked (walls for retime)
   stages: ['previs', 'anim', 'light', 'comp'],
   baseName: 'sequence',   // derived from first file / zip name
   source: null,           // 'files' | 'zip' | 'workfile'
@@ -104,27 +106,32 @@ export function computeShots(p = project) {
   return shots;
 }
 
-export function shotMeta(p, sh) {
-  return p.meta.get(p.frames[sh.start].name) || { tag: '', note: '', len: null };
-}
-export function setShotMeta(p, sh, key, val) {
-  const fn = p.frames[sh.start].name;
-  const m = p.meta.get(fn) || { tag: '', note: '', len: null };
-  m[key] = val;
-  p.meta.set(fn, m);
-}
-
 export function shotId(p, sh) { return sh.name || p.frames[sh.start].name; }
 export function isShotDisabled(p, sh) { return p.shotDisabled.has(shotId(p, sh)); }
 export function isBoardDisabled(p, fi) { return p.boardDisabled.has(p.frames[fi].name); }
-export function boardWeight(p, fi) {
-  const w = p.boardWeights.get(p.frames[fi].name);
-  return w == null || w <= 0 ? 1 : w;
+export function isPinned(p, fi) { return p.pinned.has(p.frames[fi].name); }
+
+export const MIN_DUR = () => 1 / 240; // absolute floor; practical min is ~1 frame
+
+// per-board on-screen duration (source of truth). default = 1 frame.
+export function boardDur(p, fi) {
+  const d = p.boardDur.get(p.frames[fi].name);
+  return d == null || d <= 0 ? 1 / p.fps : d;
 }
+export function setBoardDur(p, fi, sec) {
+  p.boardDur.set(p.frames[fi].name, Math.max(1 / (p.fps * 4), sec));
+}
+
 export function enabledBoards(p, sh) {
   if (isShotDisabled(p, sh)) return [];
   const out = [];
   for (let f = sh.start; f <= sh.end; f++) if (!isBoardDisabled(p, f)) out.push(f);
+  return out;
+}
+// flat ordered list of every enabled board index across all enabled shots
+export function enabledFlat(p) {
+  const out = [];
+  p.shots.forEach((sh) => { if (!isShotDisabled(p, sh)) for (let f = sh.start; f <= sh.end; f++) if (!isBoardDisabled(p, f)) out.push(f); });
   return out;
 }
 
@@ -135,44 +142,111 @@ export function unitToSec(p, v) {
   return p.lenUnit === 'frames' ? v / p.fps : v;
 }
 
-// A shot's total on-screen seconds: manual override, else enabled-board count / fps.
+// shot length = sum of its enabled boards' durations (derived)
 export function shotLenSec(p, sh) {
-  const m = shotMeta(p, sh);
-  if (m.len != null) return m.len;
-  return enabledBoards(p, sh).length / p.fps;
+  return enabledBoards(p, sh).reduce((s, fi) => s + boardDur(p, fi), 0);
+}
+// meta stays for tag/note/stageVals; len is no longer used for timing
+export function shotMeta(p, sh) {
+  return p.meta.get(p.frames[sh.start].name) || { tag: '', note: '', len: null };
+}
+export function setShotMeta(p, sh, key, val) {
+  const fn = p.frames[sh.start].name;
+  const m = p.meta.get(fn) || { tag: '', note: '', len: null };
+  m[key] = val;
+  p.meta.set(fn, m);
 }
 
-// Fit-to-spot across ENABLED shots; fills only shots without a manual length,
-// then normalizes so the whole spot lands exactly on target.
-export function autoEstimate(p = project, { minSec = 0.5 } = {}) {
-  const active = p.shots.filter((sh) => enabledBoards(p, sh).length > 0);
-  const unset = [];
-  let lockedTotal = 0;
-  for (const sh of active) {
-    const m = shotMeta(p, sh);
-    if (m.len != null) lockedTotal += m.len; else unset.push(sh);
-  }
-  if (!unset.length) {
-    const t = active.reduce((s, sh) => s + shotLenSec(p, sh), 0);
-    return { filled: 0, total: t, over: t - p.spotSeconds };
-  }
-  let budget = p.spotSeconds - lockedTotal;
-  if (budget <= 0) budget = 0;
-  let floor = minSec;
-  if (unset.length * floor > budget && budget > 0) floor = budget / unset.length;
-  const weightTotal = unset.reduce((s, sh) => s + enabledBoards(p, sh).length, 0) || unset.length;
-  const raw = unset.map((sh) => Math.max(floor, budget * (enabledBoards(p, sh).length / weightTotal)));
-  const rawSum = raw.reduce((a, b) => a + b, 0) || 1;
-  unset.forEach((sh, i) => {
-    const len = budget > 0 ? (raw[i] / rawSum) * budget : floor;
-    setShotMeta(p, sh, 'len', Math.round(len * 1000) / 1000);
-  });
-  const total = active.reduce((s, sh) => s + shotLenSec(p, sh), 0);
-  return { filled: unset.length, total, over: total - p.spotSeconds };
+// scale a shot's enabled boards proportionally to a new total length
+export function setShotLen(p, sh, sec) {
+  const boards = enabledBoards(p, sh);
+  if (!boards.length) return;
+  const cur = shotLenSec(p, sh) || 1;
+  const factor = Math.max(0.01, sec) / cur;
+  boards.forEach((fi) => setBoardDur(p, fi, boardDur(p, fi) * factor));
 }
 
-// Full timeline: per-board placements, shot color spans, collapse markers for
-// disabled boards/shots (zero width — no gaps).
+export function totalSec(p) { return enabledFlat(p).reduce((s, fi) => s + boardDur(p, fi), 0); }
+
+// Auto-estimate: give every UNPINNED enabled board an equal share of the
+// remaining budget (spot − pinned time) so the total hits the spot exactly.
+export function autoEstimate(p = project) {
+  const flat = enabledFlat(p);
+  if (!flat.length) return { filled: 0, total: 0, over: -p.spotSeconds };
+  const pinnedTime = flat.filter((fi) => isPinned(p, fi)).reduce((s, fi) => s + boardDur(p, fi), 0);
+  const free = flat.filter((fi) => !isPinned(p, fi));
+  if (!free.length) return { filled: 0, total: totalSec(p), over: totalSec(p) - p.spotSeconds };
+  const per = Math.max(1 / p.fps, (p.spotSeconds - pinnedTime) / free.length);
+  free.forEach((fi) => setBoardDur(p, fi, per));
+  const total = totalSec(p);
+  return { filled: free.length, total, over: total - p.spotSeconds };
+}
+
+// Rebalance: scale all UNPINNED boards so the total equals the spot length.
+export function rebalance(p = project) {
+  const flat = enabledFlat(p);
+  const pinnedTime = flat.filter((fi) => isPinned(p, fi)).reduce((s, fi) => s + boardDur(p, fi), 0);
+  const free = flat.filter((fi) => !isPinned(p, fi));
+  const freeTotal = free.reduce((s, fi) => s + boardDur(p, fi), 0) || 1;
+  const target = Math.max(0, p.spotSeconds - pinnedTime);
+  const factor = target / freeTotal;
+  free.forEach((fi) => setBoardDur(p, fi, boardDur(p, fi) * factor));
+  return { total: totalSec(p), over: totalSec(p) - p.spotSeconds };
+}
+
+// Core gesture: set board `fi` to `newDur`, redistributing the difference across
+// nearby UNPINNED boards with a falloff whose reach scales with the magnitude,
+// bounded by pinned boards (walls). Leftover the region can't absorb lets the
+// total drift (soft). Returns the delta actually applied to fi.
+export function retimeBoard(p, fi, newDur) {
+  const flat = enabledFlat(p);
+  const pos = flat.indexOf(fi);
+  if (pos < 0) return 0;
+  newDur = Math.max(1 / (p.fps * 4), newDur);
+  const delta = newDur - boardDur(p, fi); // + means fi wants more time (take from others)
+  if (Math.abs(delta) < 1e-6) return 0;
+
+  // pin-bounded region around fi (pins are walls; fi may itself be pinned/dragged)
+  let lo = pos, hi = pos;
+  while (lo - 1 >= 0 && !isPinned(p, flat[lo - 1])) lo--;
+  while (hi + 1 < flat.length && !isPinned(p, flat[hi + 1])) hi++;
+  const others = [];
+  for (let i = lo; i <= hi; i++) if (i !== pos && !isPinned(p, flat[i])) others.push(flat[i]);
+
+  setBoardDur(p, fi, newDur);
+  if (!others.length) return delta; // nothing to absorb → total drifts
+
+  // falloff reach grows with |delta|: ~1 board per frame of change, min 2
+  const reach = Math.max(2, Math.abs(delta) * p.fps);
+  const minD = 1 / p.fps;
+  // weight by distance (in board steps) with linear falloff to `reach`
+  let remaining = delta; // >0: remove this much from others; <0: add -delta to others
+  // iterate a few passes to respect the per-board minimum when removing
+  for (let pass = 0; pass < 4 && Math.abs(remaining) > 1e-6; pass++) {
+    const pool = others.filter((b) => (remaining > 0 ? boardDur(p, b) > minD + 1e-9 : true));
+    if (!pool.length) break;
+    const weights = pool.map((b) => {
+      const dist = Math.abs(flat.indexOf(b) - pos);
+      return Math.max(0.0001, 1 - dist / (reach + 1));
+    });
+    const wSum = weights.reduce((a, b) => a + b, 0) || 1;
+    let absorbed = 0;
+    pool.forEach((b, i) => {
+      const share = remaining * (weights[i] / wSum);
+      const cur = boardDur(p, b);
+      let next = cur - share; // removing `share` (share>0 shrinks)
+      if (next < minD) next = minD;
+      const applied = cur - next;
+      setBoardDur(p, b, next);
+      absorbed += applied;
+    });
+    remaining -= absorbed;
+  }
+  // leftover `remaining` (couldn't absorb) → total drifts by that amount; soft.
+  return delta;
+}
+
+// Full timeline: per-board placements, shot spans, collapse markers.
 export function timeline(p = project) {
   const boards = [];
   const spans = [];
@@ -182,13 +256,11 @@ export function timeline(p = project) {
     if (isShotDisabled(p, sh)) { markers.push({ atSec: t, kind: 'shot', label: shotId(p, sh) }); return; }
     const enabled = enabledBoards(p, sh);
     if (!enabled.length) { markers.push({ atSec: t, kind: 'shot', label: shotId(p, sh) }); return; }
-    const shotLen = shotLenSec(p, sh);
-    const sumW = enabled.reduce((s, fi) => s + boardWeight(p, fi), 0) || 1;
     const spanStart = t;
     for (let fi = sh.start; fi <= sh.end; fi++) {
       if (isBoardDisabled(p, fi)) { markers.push({ atSec: t, kind: 'board', label: p.frames[fi].name }); continue; }
-      const len = shotLen * (boardWeight(p, fi) / sumW);
-      boards.push({ fi, startSec: t, len, shotIndex: si });
+      const len = boardDur(p, fi);
+      boards.push({ fi, startSec: t, len, shotIndex: si, pinned: isPinned(p, fi) });
       t += len;
     }
     spans.push({ shotIndex: si, name: sh.name || `S${si + 1}`, startSec: spanStart, len: t - spanStart, colorIdx: colorIdx % 2 });
@@ -197,7 +269,6 @@ export function timeline(p = project) {
   return { boards, spans, markers, total: t };
 }
 
-// Which board is on screen at global time `sec`.
 export function resolveAt(p, sec) {
   const { boards, total } = timeline(p);
   if (!boards.length) return null;
@@ -213,8 +284,9 @@ export function captureState(p = project) {
     lenUnit: p.lenUnit, spotSeconds: p.spotSeconds, stages: p.stages,
     manualAdd: [...p.manualAdd], manualRemove: [...p.manualRemove],
     meta: [...p.meta.entries()],
-    boardWeights: [...p.boardWeights.entries()],
+    boardDur: [...p.boardDur.entries()],
     boardDisabled: [...p.boardDisabled], shotDisabled: [...p.shotDisabled],
+    pinned: [...p.pinned],
     audio: p.audio ? { offsetSec: p.audio.offsetSec, inSec: p.audio.inSec, outSec: p.audio.outSec } : null,
   });
 }
@@ -224,9 +296,10 @@ export function applyState(p, snap) {
   p.lenUnit = s.lenUnit; p.spotSeconds = s.spotSeconds; p.stages = s.stages || p.stages;
   p.manualAdd = new Set(s.manualAdd); p.manualRemove = new Set(s.manualRemove);
   p.meta = new Map(s.meta);
-  p.boardWeights = new Map(s.boardWeights || []);
+  p.boardDur = new Map(s.boardDur || []);
   p.boardDisabled = new Set(s.boardDisabled || []);
   p.shotDisabled = new Set(s.shotDisabled || []);
+  p.pinned = new Set(s.pinned || []);
   if (p.audio && s.audio) { p.audio.offsetSec = s.audio.offsetSec; p.audio.inSec = s.audio.inSec; p.audio.outSec = s.audio.outSec; }
   computeShots(p);
 }
