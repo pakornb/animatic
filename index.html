@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Animatic — Editor</title>
+</head>
+<body>
+  <header>
+    <h1><span class="dot">▍</span> Animatic</h1>
+    <span class="base" id="baseName"></span>
+    <div class="ctrl"><span>fps</span><input type="number" id="fps" min="1" max="120" value="24" /></div>
+    <div class="ctrl"><span>spot</span><input type="number" id="spot" min="1" max="600" value="30" /><span>s</span></div>
+    <div class="ctrl">
+      <span>length</span>
+      <select id="lenUnit"><option value="sec">seconds</option><option value="frames">frames</option></select>
+    </div>
+    <div class="ctrl">
+      <span>group</span>
+      <select id="groupMode">
+        <option value="cuts">detected cuts</option>
+        <option value="name">filename</option>
+      </select>
+    </div>
+    <button class="btn ghost sm" id="autoBtn" title="fill unset shot lengths to fit the spot">auto-estimate</button>
+    <button class="btn ghost sm" id="saveBtn" disabled>Save work</button>
+    <button class="btn ghost sm" id="openWorkBtn">Open work</button>
+    <span class="stats" id="stats"></span>
+    <span class="iso" id="iso">checking…</span>
+  </header>
+
+  <main>
+    <div class="preview" id="loadView">
+      <div class="drop" id="drop">
+        <h2>Drop a zip, an image sequence, or a work file</h2>
+        <p>Storyboard boards or rendered frames. Grouped into shots by filename
+           (e.g. <span style="font-family:var(--mono)">MCDS_10_001</span>) or detected cuts.</p>
+        <button class="btn" id="pickBtn">Choose files…</button>
+        <button class="btn ghost" id="pickZip">Choose zip…</button>
+        <button class="btn ghost" id="openWorkBtn2">Open work file…</button>
+      </div>
+    </div>
+
+    <div class="hidden stage" id="stage">
+      <div class="stage-main">
+        <div class="preview">
+          <img id="preview" alt="" />
+          <div class="meta" id="previewMeta"></div>
+        </div>
+        <div class="timeline-wrap">
+          <div class="budget-row"><span class="budget" id="budget"></span></div>
+          <div class="timeline" id="timeline"></div>
+        </div>
+      </div>
+      <aside class="inspector-panel">
+        <div class="insp-scroll" id="inspector"></div>
+      </aside>
+    </div>
+  </main>
+
+  <div class="overlay hidden" id="overlay"><div class="ov-card"><div class="spinner"></div><span>Working…</span></div></div>
+  <div class="toast" id="toast"></div>
+  <input type="file" id="fileInput" multiple accept="image/*" />
+  <input type="file" id="zipInput" accept=".zip,application/zip" />
+  <input type="file" id="workInput" accept=".json,application/json" />
+
+  <script type="module" src="/src/editor/main.js"></script>
+</body>
+</html>

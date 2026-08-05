@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Animatic — Viewer</title>
+</head>
+<body>
+  <header>
+    <h1><span class="dot">▍</span> Animatic <span class="base">viewer</span></h1>
+    <span class="stats" id="stats"></span>
+  </header>
+  <main>
+    <div class="preview">
+      <div class="drop" id="drop">
+        <h2>Read-only animatic viewer</h2>
+        <p id="msg">Open a viewer link, or drop a viewer JSON here.</p>
+        <button class="btn" id="pickBtn">Open viewer JSON…</button>
+      </div>
+    </div>
+  </main>
+  <input type="file" id="fileInput" accept=".json,application/json" />
+  <script type="module" src="/src/viewer/main.js"></script>
+</body>
+</html>
