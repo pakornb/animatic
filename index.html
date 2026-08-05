@@ -24,14 +24,17 @@
     <div class="help-pop hidden" id="helpPop">
       <b>Shortcuts</b>
       <div><span>Space</span> play / pause</div>
-      <div><span>← / →</span> step 1 frame</div>
-      <div><span>Shift + ← / →</span> prev / next shot</div>
+      <div><span>← / →</span> prev / next board</div>
+      <div><span>Alt + ← / →</span> prev / next shot</div>
       <div><span>Cmd/Ctrl + ← / →</span> start / end</div>
-      <div><span>Cmd/Ctrl + Z</span> undo</div>
-      <div><span>Shift + Cmd/Ctrl + Z</span> redo</div>
+      <div><span>↑ / ↓</span> retime selected (+more / −less)</div>
+      <div><span>Shift + ↑/↓ or drag</span> 2× falloff reach</div>
+      <div><span>Cmd/Ctrl + Z</span> undo · <span>+Shift</span> redo</div>
       <hr />
-      <div><span>drag tile ↕</span> retime board (others flex, pins hold)</div>
-      <div><span>click tile</span> select + seek</div>
+      <div><span>drag tile ↕</span> retime · <span>↔</span> mushy-offset</div>
+      <div><span>Cmd/Ctrl + click</span> add/remove from selection</div>
+      <div><span>drag on ruler</span> marquee select · click = seek</div>
+      <div><span>grab blue bar</span> scrub frame-by-frame</div>
       <div><span>click marker</span> re-enable disabled board/shot</div>
     </div>
   </header>
@@ -62,15 +65,15 @@
           <button class="tbtn" id="stepFwd" title="step forward (→)">|▶</button>
           <button class="tbtn" id="nextShot" title="next shot (Shift+→)">»</button>
           <button class="tbtn" id="toEnd" title="end">⏭</button>
-          <input type="range" id="scrub" min="0" max="30" step="0.01" value="0" />
           <span class="clock" id="clock">0:00.00 / 0:30.00</span>
+          <span class="hspace"></span>
           <button class="btn ghost sm" id="loadAudioBtn0" title="load scratch VO / music">Load audio…</button>
         </div>
 
         <div class="timeline-wrap">
           <div class="tl-topbar">
             <span class="budget" id="budget"></span>
-            <span class="hint">drag a tile up/down to retime · pins hold</span>
+            <span class="hint">drag tile ↕ retime · ↔ offset · grab blue bar to scrub · Shift = 2× reach</span>
             <span class="tl-tools">
               <button class="tbtn sm" id="zoomOut" title="zoom out">−</button>
               <button class="tbtn sm" id="zoomFit" title="fit">fit</button>
@@ -78,7 +81,10 @@
             </span>
           </div>
           <div class="timeline-scroll" id="timeline">
-            <div class="tl-inner" id="tlInner"><div class="playhead" id="playhead"></div></div>
+            <div class="tl-inner" id="tlInner">
+              <canvas id="tlRuler"></canvas>
+              <div class="playhead" id="playhead"><div class="ph-grab" id="phGrab"></div></div>
+            </div>
           </div>
 
           <div class="audio-lane hidden" id="audioLane">
@@ -118,6 +124,12 @@
           <div class="tp-row">
             <button class="btn ghost sm" id="autoBtn" title="give every unpinned board an equal share to fill the spot">auto-estimate</button>
             <button class="btn ghost sm" id="rebalBtn" title="scale unpinned boards so the total hits the spot">rebalance</button>
+          </div>
+          <div class="tp-row">
+            <label style="flex:1">falloff
+              <input type="range" id="falloff" min="1" max="20" step="1" value="3" style="flex:1" />
+              <span id="falloffVal" style="color:var(--text);min-width:16px">3</span>
+            </label>
           </div>
         </div>
         <div class="insp-scroll" id="inspector"></div>

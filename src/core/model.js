@@ -18,6 +18,7 @@ export const project = {
   boardDisabled: new Set(),// filenames of disabled boards
   shotDisabled: new Set(),// shot ids (name key or start filename) that are cut
   pinned: new Set(),      // filenames whose duration is locked (walls for retime)
+  falloffReach: 3,        // base falloff reach in boards (global; Shift doubles it)
   stages: ['previs', 'anim', 'light', 'comp'],
   baseName: 'sequence',   // derived from first file / zip name
   source: null,           // 'files' | 'zip' | 'workfile'
@@ -194,56 +195,97 @@ export function rebalance(p = project) {
   return { total: totalSec(p), over: totalSec(p) - p.spotSeconds };
 }
 
-// Core gesture: set board `fi` to `newDur`, redistributing the difference across
-// nearby UNPINNED boards with a falloff whose reach scales with the magnitude,
-// bounded by pinned boards (walls). Leftover the region can't absorb lets the
-// total drift (soft). Returns the delta actually applied to fi.
-export function retimeBoard(p, fi, newDur) {
+// pin-bounded region [lo,hi] (flat indices) around a set of positions
+function regionAround(p, flat, positions) {
+  let lo = Math.min(...positions), hi = Math.max(...positions);
+  while (lo - 1 >= 0 && !isPinned(p, flat[lo - 1])) lo--;
+  while (hi + 1 < flat.length && !isPinned(p, flat[hi + 1])) hi++;
+  const leftPin = lo > 0 && isPinned(p, flat[lo - 1]);
+  const rightPin = hi < flat.length - 1 && isPinned(p, flat[hi + 1]);
+  return { lo, hi, leftPin, rightPin };
+}
+
+// Remove `amount` (if >0) or add `-amount` (if <0) across `targets`, weighted by
+// distance from anchorPos, clamped to a per-board minimum. Returns unabsorbed leftover.
+function redistribute(p, targets, amount, anchorPos, flat, reach) {
+  let remaining = amount;
+  const minD = 1 / p.fps;
+  for (let pass = 0; pass < 6 && Math.abs(remaining) > 1e-6; pass++) {
+    const pool = targets.filter((b) => (remaining > 0 ? boardDur(p, b) > minD + 1e-9 : true));
+    if (!pool.length) break;
+    const weights = pool.map((b) => Math.max(0.0001, 1 - Math.abs(flat.indexOf(b) - anchorPos) / (reach + 1)));
+    const wSum = weights.reduce((a, b) => a + b, 0) || 1;
+    let done = 0;
+    pool.forEach((b, i) => {
+      const share = remaining * (weights[i] / wSum);
+      const cur = boardDur(p, b);
+      let next = cur - share;
+      if (next < minD) next = minD;
+      done += cur - next;
+      setBoardDur(p, b, next);
+    });
+    remaining -= done;
+  }
+  return remaining;
+}
+
+function slackOf(p, boards) { const minD = 1 / p.fps; return boards.reduce((s, b) => s + Math.max(0, boardDur(p, b) - minD), 0); }
+
+// Vertical retime: set board `fi` to newDur; neighbors flex with falloff, bounded
+// by pins. Between two pins the change is capped to the region's slack (no drift).
+export function retimeBoard(p, fi, newDur, reach = p.falloffReach) {
   const flat = enabledFlat(p);
   const pos = flat.indexOf(fi);
   if (pos < 0) return 0;
   newDur = Math.max(1 / (p.fps * 4), newDur);
-  const delta = newDur - boardDur(p, fi); // + means fi wants more time (take from others)
+  let delta = newDur - boardDur(p, fi);
   if (Math.abs(delta) < 1e-6) return 0;
-
-  // pin-bounded region around fi (pins are walls; fi may itself be pinned/dragged)
-  let lo = pos, hi = pos;
-  while (lo - 1 >= 0 && !isPinned(p, flat[lo - 1])) lo--;
-  while (hi + 1 < flat.length && !isPinned(p, flat[hi + 1])) hi++;
+  const { lo, hi, leftPin, rightPin } = regionAround(p, flat, [pos]);
   const others = [];
-  for (let i = lo; i <= hi; i++) if (i !== pos && !isPinned(p, flat[i])) others.push(flat[i]);
-
-  setBoardDur(p, fi, newDur);
-  if (!others.length) return delta; // nothing to absorb → total drifts
-
-  // falloff reach grows with |delta|: ~1 board per frame of change, min 2
-  const reach = Math.max(2, Math.abs(delta) * p.fps);
-  const minD = 1 / p.fps;
-  // weight by distance (in board steps) with linear falloff to `reach`
-  let remaining = delta; // >0: remove this much from others; <0: add -delta to others
-  // iterate a few passes to respect the per-board minimum when removing
-  for (let pass = 0; pass < 4 && Math.abs(remaining) > 1e-6; pass++) {
-    const pool = others.filter((b) => (remaining > 0 ? boardDur(p, b) > minD + 1e-9 : true));
-    if (!pool.length) break;
-    const weights = pool.map((b) => {
-      const dist = Math.abs(flat.indexOf(b) - pos);
-      return Math.max(0.0001, 1 - dist / (reach + 1));
-    });
-    const wSum = weights.reduce((a, b) => a + b, 0) || 1;
-    let absorbed = 0;
-    pool.forEach((b, i) => {
-      const share = remaining * (weights[i] / wSum);
-      const cur = boardDur(p, b);
-      let next = cur - share; // removing `share` (share>0 shrinks)
-      if (next < minD) next = minD;
-      const applied = cur - next;
-      setBoardDur(p, b, next);
-      absorbed += applied;
-    });
-    remaining -= absorbed;
+  for (let i = lo; i <= hi; i++) if (i !== pos) others.push(flat[i]);
+  if (!others.length) { setBoardDur(p, fi, newDur); return delta; }
+  if (delta > 0 && leftPin && rightPin) {           // fully pin-bounded → cap, no ripple
+    const slack = slackOf(p, others);
+    if (delta > slack) { delta = slack; newDur = boardDur(p, fi) + delta; }
   }
-  // leftover `remaining` (couldn't absorb) → total drifts by that amount; soft.
+  setBoardDur(p, fi, newDur);
+  redistribute(p, others, delta, pos, flat, reach);
   return delta;
+}
+
+// Scale a whole selection's durations by `factor`; neighbors absorb the net change.
+export function retimeGroup(p, fiList, factor, reach = p.falloffReach) {
+  const flat = enabledFlat(p);
+  const positions = fiList.map((fi) => flat.indexOf(fi)).filter((i) => i >= 0);
+  if (!positions.length) return;
+  const { lo, hi } = regionAround(p, flat, positions);
+  const sel = new Set(fiList);
+  const others = [];
+  for (let i = lo; i <= hi; i++) if (!sel.has(flat[i])) others.push(flat[i]);
+  let net = 0;
+  fiList.forEach((fi) => { const cur = boardDur(p, fi); const nd = Math.max(1 / (p.fps * 4), cur * factor); net += nd - cur; setBoardDur(p, fi, nd); });
+  const anchor = positions.reduce((a, b) => a + b, 0) / positions.length;
+  if (others.length) redistribute(p, others, net, anchor, flat, reach);
+  return net;
+}
+
+// Horizontal mushy-offset: slide board `fi` later (d>0) or earlier (d<0) by
+// borrowing time ahead and donating behind, with falloff, bounded by pins.
+// Board's own duration is unchanged; total stays constant.
+export function offsetBoard(p, fi, d, reach = p.falloffReach) {
+  const flat = enabledFlat(p);
+  const pos = flat.indexOf(fi);
+  if (pos < 0 || Math.abs(d) < 1e-6) return 0;
+  const { lo, hi } = regionAround(p, flat, [pos]);
+  const before = [], after = [];
+  for (let i = lo; i <= hi; i++) { if (i < pos) before.push(flat[i]); else if (i > pos) after.push(flat[i]); }
+  if (d > 0) { const s = slackOf(p, after); if (d > s) d = s; if (!before.length) d = 0; }
+  else { const s = slackOf(p, before); if (-d > s) d = -s; if (!after.length) d = 0; }
+  if (Math.abs(d) < 1e-6) return 0;
+  // move right by d: compress `after` by d, expand `before` by d
+  redistribute(p, after, d, pos, flat, reach);
+  redistribute(p, before, -d, pos, flat, reach);
+  return d;
 }
 
 // Full timeline: per-board placements, shot spans, collapse markers.
