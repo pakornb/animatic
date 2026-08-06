@@ -67,6 +67,8 @@ header .sep{width:1px;height:18px;background:var(--line);margin:0 2px}
 .tp-row label{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--muted);flex:1}
 .tp-row select{flex:1}
 .tp-row button{flex:1}
+.curve-prev{width:120px;height:34px;background:var(--panel);border:1px solid var(--line);border-radius:4px}
+.tl-tools .sep{width:1px;height:16px;background:var(--line);margin:0 4px;display:inline-block}
 
 .pin-tag{font-family:var(--mono);font-size:9px;background:var(--good);color:#0c1a0c;padding:1px 5px;border-radius:3px;vertical-align:middle}
 .board-row .mini.active{border-color:var(--good);color:var(--good)}

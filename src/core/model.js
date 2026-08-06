@@ -19,6 +19,7 @@ export const project = {
   shotDisabled: new Set(),// shot ids (name key or start filename) that are cut
   pinned: new Set(),      // filenames whose duration is locked (walls for retime)
   falloffReach: 3,        // base falloff reach in boards (global; Shift doubles it)
+  falloffCurve: 'smooth', // 'linear' | 'easeIn' | 'easeOut' | 'smooth'
   stages: ['previs', 'anim', 'light', 'comp'],
   baseName: 'sequence',   // derived from first file / zip name
   source: null,           // 'files' | 'zip' | 'workfile'
@@ -205,15 +206,27 @@ function regionAround(p, flat, positions) {
   return { lo, hi, leftPin, rightPin };
 }
 
+// normalized falloff weight for distance ratio t in [0,∞), by curve
+export function falloffWeight(t, curve = 'smooth') {
+  if (t >= 1) return 0;
+  const x = 1 - t; // 1 at center → 0 at reach
+  switch (curve) {
+    case 'linear': return x;
+    case 'easeIn': return x * x;            // tight: concentrates near the drag
+    case 'easeOut': return 1 - t * t;        // wide: spreads far before dropping
+    case 'smooth': default: return x * x * (3 - 2 * x); // smoothstep S-curve
+  }
+}
+
 // Remove `amount` (if >0) or add `-amount` (if <0) across `targets`, weighted by
-// distance from anchorPos, clamped to a per-board minimum. Returns unabsorbed leftover.
-function redistribute(p, targets, amount, anchorPos, flat, reach) {
+// distance from anchorPos with the active easing curve. Returns unabsorbed leftover.
+function redistribute(p, targets, amount, anchorPos, flat, reach, curve = p.falloffCurve) {
   let remaining = amount;
   const minD = 1 / p.fps;
   for (let pass = 0; pass < 6 && Math.abs(remaining) > 1e-6; pass++) {
     const pool = targets.filter((b) => (remaining > 0 ? boardDur(p, b) > minD + 1e-9 : true));
     if (!pool.length) break;
-    const weights = pool.map((b) => Math.max(0.0001, 1 - Math.abs(flat.indexOf(b) - anchorPos) / (reach + 1)));
+    const weights = pool.map((b) => Math.max(0.0001, falloffWeight(Math.abs(flat.indexOf(b) - anchorPos) / (reach + 1), curve)));
     const wSum = weights.reduce((a, b) => a + b, 0) || 1;
     let done = 0;
     pool.forEach((b, i) => {
@@ -285,6 +298,26 @@ export function offsetBoard(p, fi, d, reach = p.falloffReach) {
   // move right by d: compress `after` by d, expand `before` by d
   redistribute(p, after, d, pos, flat, reach);
   redistribute(p, before, -d, pos, flat, reach);
+  return d;
+}
+
+// Slide a whole selection as a block horizontally: borrow from ahead of the
+// block, donate behind, with falloff, bounded by pins. Selection durations hold.
+export function offsetGroup(p, fiList, d, reach = p.falloffReach) {
+  const flat = enabledFlat(p);
+  const positions = fiList.map((fi) => flat.indexOf(fi)).filter((i) => i >= 0);
+  if (!positions.length || Math.abs(d) < 1e-6) return 0;
+  const minP = Math.min(...positions), maxP = Math.max(...positions);
+  const { lo, hi } = regionAround(p, flat, positions);
+  const sel = new Set(fiList);
+  const before = [], after = [];
+  for (let i = lo; i <= hi; i++) { if (sel.has(flat[i])) continue; if (i < minP) before.push(flat[i]); else if (i > maxP) after.push(flat[i]); }
+  if (d > 0) { const s = slackOf(p, after); if (d > s) d = s; if (!before.length) d = 0; }
+  else { const s = slackOf(p, before); if (-d > s) d = -s; if (!after.length) d = 0; }
+  if (Math.abs(d) < 1e-6) return 0;
+  const center = (minP + maxP) / 2;
+  redistribute(p, after, d, center, flat, reach);
+  redistribute(p, before, -d, center, flat, reach);
   return d;
 }
 

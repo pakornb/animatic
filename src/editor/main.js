@@ -1,7 +1,7 @@
 import '../style.css';
 import {
   project as P, computeShots, timeline, resolveAt, autoEstimate, rebalance,
-  retimeBoard, retimeGroup, offsetBoard, boardDur, setBoardDur, enabledFlat, fmtClock,
+  retimeBoard, retimeGroup, offsetBoard, offsetGroup, boardDur, setBoardDur, enabledFlat, falloffWeight, fmtClock,
 } from '../core/model.js';
 import { loadFromFiles, loadFromZip } from '../core/frames.js';
 import { saveWorkFile, openWorkFile } from '../io/workfile.js';
@@ -48,6 +48,9 @@ function onLoaded() {
   $('baseName').textContent = P.baseName;
   $('fps').value = P.fps; $('spot').value = P.spotSeconds; $('lenUnit').value = P.lenUnit;
   $('falloff').value = P.falloffReach;
+  $('falloffVal') && ($('falloffVal').textContent = P.falloffReach);
+  $('falloffCurve').value = P.falloffCurve;
+  drawCurvePreview();
   const gm = $('groupMode'); gm.value = P.groupMode;
   gm.options[1].disabled = !P.hasNamePattern;
   gm.options[1].textContent = P.hasNamePattern ? 'filename' : 'filename (none)';
@@ -138,21 +141,26 @@ function drawRuler() {
   const w = innerScaleTotal() * pps;
   cv.width = w; cv.height = RULER_H; cv.style.width = w + 'px';
   const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, w, RULER_H);
+  const total = timeline(P).total, spotX = P.spotSeconds * pps, totalX = total * pps;
+  // overflow shading beyond the spot
+  if (total > P.spotSeconds) { ctx.fillStyle = 'rgba(255,80,80,.10)'; ctx.fillRect(spotX, 0, totalX - spotX, RULER_H); }
   // threshold dashed line
   ctx.strokeStyle = 'rgba(138,146,158,.4)'; ctx.setLineDash([4, 3]);
-  ctx.beginPath(); ctx.moveTo(0, RULER_H * 0.6); ctx.lineTo(w, RULER_H * 0.6); ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(0, RULER_H * 0.55); ctx.lineTo(w, RULER_H * 0.55); ctx.stroke(); ctx.setLineDash([]);
   // per-board diff bars
-  const { boards } = timeline(P);
-  boards.forEach((bd) => {
+  timeline(P).boards.forEach((bd) => {
     const d = P.diffs[bd.fi] || 0;
-    const bh = Math.min(RULER_H, (d / 60) * RULER_H);
+    const bh = Math.min(RULER_H - 4, (d / 60) * (RULER_H - 4));
     const x = bd.startSec * pps, bw = Math.max(1, bd.len * pps);
     ctx.fillStyle = d >= P.threshold ? 'rgba(255,138,61,.8)' : 'rgba(90,100,114,.7)';
-    ctx.fillRect(x, RULER_H - bh, bw, bh);
+    ctx.fillRect(x, RULER_H - 4 - bh, bw, bh);
   });
-  // target line
-  const tx = P.spotSeconds * pps;
-  ctx.fillStyle = 'rgba(255,138,61,.6)'; ctx.fillRect(tx, 0, 2, RULER_H);
+  // spot bar (bottom): green 0→spot, red spot→total
+  ctx.fillStyle = 'rgba(108,192,112,.9)'; ctx.fillRect(0, RULER_H - 3, Math.min(spotX, totalX), 3);
+  if (totalX > spotX) { ctx.fillStyle = 'rgba(255,90,90,.9)'; ctx.fillRect(spotX, RULER_H - 3, totalX - spotX, 3); }
+  // start + spot-end ticks
+  ctx.fillStyle = 'rgba(108,192,112,1)'; ctx.fillRect(0, 0, 2, RULER_H);
+  ctx.fillStyle = 'rgba(255,138,61,.9)'; ctx.fillRect(spotX - 1, 0, 2, RULER_H);
 }
 
 // ---------- selection ----------
@@ -184,7 +192,8 @@ function attachTile(slot, imgCanvas, fi) {
       if (selected.size > 1 && selected.has(fi)) retimeGroup(P, [...selected], desired / startDur, reach);
       else retimeBoard(P, fi, desired, reach);
     } else {
-      offsetBoard(P, fi, dx * SEC_PER_PX, reach);
+      if (selected.size > 1 && selected.has(fi)) offsetGroup(P, [...selected], dx * SEC_PER_PX, reach);
+      else offsetBoard(P, fi, dx * SEC_PER_PX, reach);
     }
     computeShots(P); light();
   });
@@ -259,6 +268,19 @@ function arrowRetime(dir, big) {
 function doUndo() { if (undo()) { render(); onTick(transport.sec, false); toast('Undo'); } }
 function doRedo() { if (redo()) { render(); onTick(transport.sec, false); toast('Redo'); } }
 
+function clearSelection() { selected.clear(); render(); }
+let marqEl = null, marqX0 = 0;
+function clearMarquee() { if (marqEl) { marqEl.remove(); marqEl = null; } }
+function drawCurvePreview() {
+  const cv = $('curvePrev'); if (!cv) return;
+  const w = cv.width = cv.clientWidth || 120, h = cv.height = 34;
+  const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(78,168,222,.9)'; ctx.lineWidth = 1.5; ctx.beginPath();
+  for (let i = 0; i <= w; i++) { const t = (i / w); const y = h - 3 - falloffWeight(t, P.falloffCurve) * (h - 6); if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y); }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(90,100,114,.5)'; ctx.beginPath(); ctx.moveTo(0, h - 3); ctx.lineTo(w, h - 3); ctx.stroke();
+}
+
 // ---------- playhead + ruler interactions ----------
 function wirePlayheadAndRuler() {
   const grab = $('phGrab');
@@ -268,28 +290,31 @@ function wirePlayheadAndRuler() {
   grab.addEventListener('pointermove', (e) => { if (dragging) scrubTo(e.clientX); });
   grab.addEventListener('pointerup', (e) => { dragging = false; grab.releasePointerCapture?.(e.pointerId); });
 
-  // marquee-select on the ruler
   const ruler = $('tlRuler');
-  let marq = null, mx0 = 0;
   ruler.addEventListener('pointerdown', (e) => {
-    const sc = $('timeline'); mx0 = e.clientX - sc.getBoundingClientRect().left + sc.scrollLeft;
-    marq = document.createElement('div'); marq.className = 'marquee'; marq.style.left = mx0 + 'px'; marq.style.width = '0px';
-    $('tlInner').appendChild(marq); ruler.setPointerCapture(e.pointerId);
+    clearMarquee();
+    const sc = $('timeline'); marqX0 = e.clientX - sc.getBoundingClientRect().left + sc.scrollLeft;
+    marqEl = document.createElement('div'); marqEl.className = 'marquee'; marqEl.style.left = marqX0 + 'px'; marqEl.style.width = '0px';
+    $('tlInner').appendChild(marqEl); ruler.setPointerCapture(e.pointerId);
   });
   ruler.addEventListener('pointermove', (e) => {
-    if (!marq) return;
+    if (!marqEl) return;
     const sc = $('timeline'); const x = e.clientX - sc.getBoundingClientRect().left + sc.scrollLeft;
-    marq.style.left = Math.min(mx0, x) + 'px'; marq.style.width = Math.abs(x - mx0) + 'px';
+    marqEl.style.left = Math.min(marqX0, x) + 'px'; marqEl.style.width = Math.abs(x - marqX0) + 'px';
   });
-  ruler.addEventListener('pointerup', (e) => {
-    if (!marq) return;
-    const sc = $('timeline'); const x = e.clientX - sc.getBoundingClientRect().left + sc.scrollLeft;
-    const a = Math.min(mx0, x) / pps, b = Math.max(mx0, x) / pps;
-    marq.remove(); marq = null;
-    if (Math.abs(b - a) < 0.02) { transport.pause(); transport.seek(Math.round(a * P.fps) / P.fps); return; } // click = seek
+  const finishMarquee = (e) => {
+    if (!marqEl) return;
+    const sc = $('timeline'); const x = (e && e.clientX != null) ? e.clientX - sc.getBoundingClientRect().left + sc.scrollLeft : marqX0;
+    const a = Math.min(marqX0, x) / pps, b = Math.max(marqX0, x) / pps;
+    clearMarquee();
+    if (Math.abs(b - a) < 0.02) { transport.pause(); transport.seek(Math.round(a * P.fps) / P.fps); return; }
     const sel = new Set(); timeline(P).boards.forEach((bd) => { if (bd.startSec + bd.len > a && bd.startSec < b) sel.add(bd.fi); });
     if (sel.size) { selected = sel; cur = [...sel][0]; render(); toast(`${sel.size} selected`); }
-  });
+  };
+  ruler.addEventListener('pointerup', finishMarquee);
+  ruler.addEventListener('pointercancel', clearMarquee);
+  ruler.addEventListener('lostpointercapture', () => { if (marqEl) clearMarquee(); });
+  window.addEventListener('blur', clearMarquee);
 }
 
 // ---------- wire ----------
@@ -312,6 +337,8 @@ function wire() {
   $('lenUnit').onchange = (e) => { P.lenUnit = e.target.value; render(); };
   $('groupMode').onchange = (e) => { mutate(() => { P.groupMode = e.target.value; }); selected.clear(); render(); };
   $('falloff').oninput = (e) => { P.falloffReach = +e.target.value; $('falloffVal').textContent = e.target.value; };
+  $('falloffCurve').onchange = (e) => { P.falloffCurve = e.target.value; drawCurvePreview(); };
+  $('clearSelBtn').onclick = clearSelection;
   $('autoBtn').onclick = () => { mutate(() => { const r = autoEstimate(P); toast(`Estimated ${r.filled} boards → ${fmtClock(r.total)}`); }); render(); };
   $('rebalBtn').onclick = () => { mutate(() => { const r = rebalance(P); toast(`Rebalanced → ${fmtClock(r.total)}`); }); render(); };
 
@@ -351,6 +378,7 @@ function wire() {
     if (typing || !P.frames.length) return;
     const k = e.key;
     if (k === ' ') { if (/button/i.test(e.target.tagName)) return; e.preventDefault(); transport.toggle(); return; }
+    if (k === 'Escape') { clearSelection(); return; }
     if (k === 'ArrowRight' || k === 'ArrowLeft') {
       e.preventDefault(); const dir = k === 'ArrowRight' ? 1 : -1;
       if (e.metaKey || e.ctrlKey) transport.seek(dir > 0 ? timeline(P).total : 0);

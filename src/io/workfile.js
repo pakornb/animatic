@@ -30,7 +30,7 @@ export async function saveWorkFile(onProgress) {
     baseName: P.baseName,
     fps: P.fps, threshold: P.threshold, groupMode: P.groupMode,
     hasNamePattern: P.hasNamePattern, lenUnit: P.lenUnit, spotSeconds: P.spotSeconds,
-    falloffReach: P.falloffReach,
+    falloffReach: P.falloffReach, falloffCurve: P.falloffCurve,
     stages: P.stages,
     frameKeys: P.frameKeys,
     diffs: P.diffs.map((d) => Math.round(d * 100) / 100),
@@ -64,6 +64,7 @@ export async function openWorkFile(file, onProgress) {
   P.lenUnit = doc.lenUnit || 'sec';
   P.spotSeconds = doc.spotSeconds || 30;
   P.falloffReach = doc.falloffReach || 3;
+  P.falloffCurve = doc.falloffCurve || 'smooth';
   P.stages = doc.stages || ['previs', 'anim', 'light', 'comp'];
   P.frameKeys = doc.frameKeys || [];
   P.diffs = doc.diffs || [];

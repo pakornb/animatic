@@ -75,6 +75,8 @@
             <span class="budget" id="budget"></span>
             <span class="hint">drag tile ↕ retime · ↔ offset · grab blue bar to scrub · Shift = 2× reach</span>
             <span class="tl-tools">
+              <button class="tbtn sm" id="clearSelBtn" title="clear selection (Esc)">✕ sel</button>
+              <span class="sep"></span>
               <button class="tbtn sm" id="zoomOut" title="zoom out">−</button>
               <button class="tbtn sm" id="zoomFit" title="fit">fit</button>
               <button class="tbtn sm" id="zoomIn" title="zoom in">+</button>
@@ -130,6 +132,17 @@
               <input type="range" id="falloff" min="1" max="20" step="1" value="3" style="flex:1" />
               <span id="falloffVal" style="color:var(--text);min-width:16px">3</span>
             </label>
+          </div>
+          <div class="tp-row">
+            <label style="flex:1">curve
+              <select id="falloffCurve">
+                <option value="smooth">smooth</option>
+                <option value="linear">linear</option>
+                <option value="easeIn">tight</option>
+                <option value="easeOut">wide</option>
+              </select>
+            </label>
+            <canvas id="curvePrev" class="curve-prev" title="falloff shape (center → reach)"></canvas>
           </div>
         </div>
         <div class="insp-scroll" id="inspector"></div>
