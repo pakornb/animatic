@@ -219,14 +219,16 @@ export function falloffWeight(t, curve = 'smooth') {
 }
 
 // Remove `amount` (if >0) or add `-amount` (if <0) across `targets`, weighted by
-// distance from anchorPos with the active easing curve. Returns unabsorbed leftover.
-function redistribute(p, targets, amount, anchorPos, flat, reach, curve = p.falloffCurve) {
+// distance from the span [spanLo,spanHi] (0 inside the span, growing outside) with
+// the active easing curve. Returns unabsorbed leftover.
+function redistribute(p, targets, amount, spanLo, spanHi, flat, reach, curve = p.falloffCurve) {
   let remaining = amount;
   const minD = 1 / p.fps;
+  const distOf = (pos) => (pos < spanLo ? spanLo - pos : pos > spanHi ? pos - spanHi : 0);
   for (let pass = 0; pass < 6 && Math.abs(remaining) > 1e-6; pass++) {
     const pool = targets.filter((b) => (remaining > 0 ? boardDur(p, b) > minD + 1e-9 : true));
     if (!pool.length) break;
-    const weights = pool.map((b) => Math.max(0.0001, falloffWeight(Math.abs(flat.indexOf(b) - anchorPos) / (reach + 1), curve)));
+    const weights = pool.map((b) => Math.max(0.0001, falloffWeight(distOf(flat.indexOf(b)) / (reach + 1), curve)));
     const wSum = weights.reduce((a, b) => a + b, 0) || 1;
     let done = 0;
     pool.forEach((b, i) => {
@@ -262,7 +264,7 @@ export function retimeBoard(p, fi, newDur, reach = p.falloffReach) {
     if (delta > slack) { delta = slack; newDur = boardDur(p, fi) + delta; }
   }
   setBoardDur(p, fi, newDur);
-  redistribute(p, others, delta, pos, flat, reach);
+  redistribute(p, others, delta, pos, pos, flat, reach);
   return delta;
 }
 
@@ -277,8 +279,8 @@ export function retimeGroup(p, fiList, factor, reach = p.falloffReach) {
   for (let i = lo; i <= hi; i++) if (!sel.has(flat[i])) others.push(flat[i]);
   let net = 0;
   fiList.forEach((fi) => { const cur = boardDur(p, fi); const nd = Math.max(1 / (p.fps * 4), cur * factor); net += nd - cur; setBoardDur(p, fi, nd); });
-  const anchor = positions.reduce((a, b) => a + b, 0) / positions.length;
-  if (others.length) redistribute(p, others, net, anchor, flat, reach);
+  const minP = Math.min(...positions), maxP = Math.max(...positions);
+  if (others.length) redistribute(p, others, net, minP, maxP, flat, reach);
   return net;
 }
 
@@ -296,8 +298,8 @@ export function offsetBoard(p, fi, d, reach = p.falloffReach) {
   else { const s = slackOf(p, before); if (-d > s) d = -s; if (!after.length) d = 0; }
   if (Math.abs(d) < 1e-6) return 0;
   // move right by d: compress `after` by d, expand `before` by d
-  redistribute(p, after, d, pos, flat, reach);
-  redistribute(p, before, -d, pos, flat, reach);
+  redistribute(p, after, d, pos, pos, flat, reach);
+  redistribute(p, before, -d, pos, pos, flat, reach);
   return d;
 }
 
@@ -315,9 +317,8 @@ export function offsetGroup(p, fiList, d, reach = p.falloffReach) {
   if (d > 0) { const s = slackOf(p, after); if (d > s) d = s; if (!before.length) d = 0; }
   else { const s = slackOf(p, before); if (-d > s) d = -s; if (!after.length) d = 0; }
   if (Math.abs(d) < 1e-6) return 0;
-  const center = (minP + maxP) / 2;
-  redistribute(p, after, d, center, flat, reach);
-  redistribute(p, before, -d, center, flat, reach);
+  redistribute(p, after, d, minP, maxP, flat, reach);
+  redistribute(p, before, -d, minP, maxP, flat, reach);
   return d;
 }
 
