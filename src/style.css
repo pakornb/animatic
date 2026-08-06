@@ -50,6 +50,12 @@ main{flex:1;display:flex;flex-direction:column;min-height:0}
 .ph-grab{position:absolute;top:-1px;left:-6px;width:14px;height:24px;background:var(--head);border-radius:3px;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .marquee{position:absolute;top:0;height:100%;background:rgba(78,168,222,.15);border:1px solid var(--head);z-index:4;pointer-events:none}
 .tl-topbar .hint{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.tl-falloff{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.tl-falloff .lbl{color:var(--muted)}
+.tl-falloff input[type=range]{width:90px;accent-color:var(--cut)}
+.tl-falloff #falloffVal{color:var(--text);min-width:14px;text-align:center}
+.tl-falloff select{padding:2px 4px}
+.tl-falloff .curve-prev{width:70px;height:24px;background:var(--panel);border:1px solid var(--line);border-radius:4px}
 
 /* header extras */
 .hspace{flex:1}

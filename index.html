@@ -11,6 +11,7 @@
     <span class="base" id="baseName"></span>
     <div class="ctrl"><span>fps</span><input type="number" id="fps" min="1" max="120" value="24" /></div>
     <div class="ctrl"><span>spot</span><input type="number" id="spot" min="1" max="600" value="30" /><span>s</span></div>
+    <div class="ctrl"><span>res</span><input type="number" id="resW" min="1" value="1920" style="width:64px" />×<input type="number" id="resH" min="1" value="1080" style="width:64px" /></div>
     <span class="hspace"></span>
     <button class="btn ghost sm" id="openWorkBtn">Open</button>
     <button class="btn ghost sm" id="saveBtn" disabled>Save</button>
@@ -73,7 +74,18 @@
         <div class="timeline-wrap">
           <div class="tl-topbar">
             <span class="budget" id="budget"></span>
-            <span class="hint">drag tile ↕ retime · ↔ offset · grab blue bar to scrub · Shift = 2× reach</span>
+            <span class="tl-falloff">
+              <span class="lbl">falloff</span>
+              <input type="range" id="falloff" min="1" max="20" step="1" value="3" />
+              <span id="falloffVal">3</span>
+              <select id="falloffCurve">
+                <option value="smooth">smooth</option>
+                <option value="linear">linear</option>
+                <option value="easeIn">tight</option>
+                <option value="easeOut">wide</option>
+              </select>
+              <canvas id="curvePrev" class="curve-prev" title="falloff shape (center → reach)"></canvas>
+            </span>
             <span class="tl-tools">
               <button class="tbtn sm" id="clearSelBtn" title="clear selection (Esc)">✕ sel</button>
               <span class="sep"></span>
@@ -126,23 +138,6 @@
           <div class="tp-row">
             <button class="btn ghost sm" id="autoBtn" title="give every unpinned board an equal share to fill the spot">auto-estimate</button>
             <button class="btn ghost sm" id="rebalBtn" title="scale unpinned boards so the total hits the spot">rebalance</button>
-          </div>
-          <div class="tp-row">
-            <label style="flex:1">falloff
-              <input type="range" id="falloff" min="1" max="20" step="1" value="3" style="flex:1" />
-              <span id="falloffVal" style="color:var(--text);min-width:16px">3</span>
-            </label>
-          </div>
-          <div class="tp-row">
-            <label style="flex:1">curve
-              <select id="falloffCurve">
-                <option value="smooth">smooth</option>
-                <option value="linear">linear</option>
-                <option value="easeIn">tight</option>
-                <option value="easeOut">wide</option>
-              </select>
-            </label>
-            <canvas id="curvePrev" class="curve-prev" title="falloff shape (center → reach)"></canvas>
           </div>
         </div>
         <div class="insp-scroll" id="inspector"></div>

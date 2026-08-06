@@ -27,14 +27,18 @@ function isolationBadge() {
 // ---------- loading ----------
 async function loadImages(files) {
   const arr = [...files]; const zip = arr.find((f) => /\.zip$/i.test(f.name));
-  try { overlay('Loading images…'); if (zip) await loadFromZip(zip); else await loadFromFiles(arr); afterLoad(); }
+  try { overlay('Loading images…'); if (zip) await loadFromZip(zip); else await loadFromFiles(arr); afterLoad(true); }
   catch (e) { console.error(e); toast(e.message || 'Load failed'); } finally { overlay(false); }
 }
 async function openWork(file) {
-  try { overlay('Opening work file…'); await openWorkFile(file, (d, t) => overlay(`Opening… ${d}/${t}`)); afterLoad(); }
+  try { overlay('Opening work file…'); await openWorkFile(file, (d, t) => overlay(`Opening… ${d}/${t}`)); afterLoad(false); }
   catch (e) { console.error(e); toast(e.message || 'Could not open work file'); } finally { overlay(false); }
 }
-function afterLoad() { clearHistory(); pps = null; selected.clear(); onLoaded(); }
+function afterLoad(auto) {
+  clearHistory(); pps = null; selected.clear();
+  if (auto && P.boardDur.size === 0) autoEstimate(P); // seed a rough fit-to-spot at start
+  onLoaded();
+}
 async function saveWork() {
   if (!P.frames.length) return;
   try { overlay('Saving work file…'); await saveWorkFile((d, t) => overlay(`Saving… ${d}/${t}`)); toast('Work file saved'); }
@@ -47,6 +51,7 @@ function onLoaded() {
   $('stage').classList.remove('hidden');
   $('baseName').textContent = P.baseName;
   $('fps').value = P.fps; $('spot').value = P.spotSeconds; $('lenUnit').value = P.lenUnit;
+  $('resW').value = P.resW; $('resH').value = P.resH;
   $('falloff').value = P.falloffReach;
   $('falloffVal') && ($('falloffVal').textContent = P.falloffReach);
   $('falloffCurve').value = P.falloffCurve;
@@ -335,6 +340,8 @@ function wire() {
   $('fps').onchange = (e) => { mutate(() => { P.fps = Math.max(1, +e.target.value || 24); }); render(); };
   $('spot').onchange = (e) => { mutate(() => { P.spotSeconds = Math.max(1, +e.target.value || 30); }); render(); };
   $('lenUnit').onchange = (e) => { P.lenUnit = e.target.value; render(); };
+  $('resW').onchange = (e) => { P.resW = Math.max(1, +e.target.value || 1920); };
+  $('resH').onchange = (e) => { P.resH = Math.max(1, +e.target.value || 1080); };
   $('groupMode').onchange = (e) => { mutate(() => { P.groupMode = e.target.value; }); selected.clear(); render(); };
   $('falloff').oninput = (e) => { P.falloffReach = +e.target.value; $('falloffVal').textContent = e.target.value; };
   $('falloffCurve').onchange = (e) => { P.falloffCurve = e.target.value; drawCurvePreview(); };

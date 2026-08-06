@@ -27,7 +27,7 @@ export async function saveWorkFile(onProgress) {
   const doc = {
     app: 'animatic-work', version: 1,
     savedAt: new Date().toISOString(),
-    baseName: P.baseName,
+    baseName: P.baseName, resW: P.resW, resH: P.resH,
     fps: P.fps, threshold: P.threshold, groupMode: P.groupMode,
     hasNamePattern: P.hasNamePattern, lenUnit: P.lenUnit, spotSeconds: P.spotSeconds,
     falloffReach: P.falloffReach, falloffCurve: P.falloffCurve,
@@ -57,6 +57,7 @@ export async function openWorkFile(file, onProgress) {
   if (P.audio?.url) URL.revokeObjectURL(P.audio.url);
 
   P.baseName = doc.baseName || 'sequence';
+  P.resW = doc.resW || 1920; P.resH = doc.resH || 1080;
   P.fps = doc.fps || 24;
   P.threshold = doc.threshold ?? 14;
   P.groupMode = doc.groupMode || 'cuts';

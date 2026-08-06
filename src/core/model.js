@@ -22,6 +22,7 @@ export const project = {
   falloffCurve: 'smooth', // 'linear' | 'easeIn' | 'easeOut' | 'smooth'
   stages: ['previs', 'anim', 'light', 'comp'],
   baseName: 'sequence',   // derived from first file / zip name
+  resW: 1920, resH: 1080, // spot resolution (largest source image by default)
   source: null,           // 'files' | 'zip' | 'workfile'
   audio: null,            // { name, blob, url, offsetSec, inSec, outSec } | null
   shots: [],              // computed: { start, end, count, name }

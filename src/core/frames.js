@@ -41,12 +41,15 @@ async function ingest(items, source, firstName, zipName, preserve, onProgress) {
   const tiny = document.createElement('canvas');
   tiny.width = TINY_W; tiny.height = TINY_H;
   const tctx = tiny.getContext('2d', { willReadFrequently: true });
+  let maxW = 0, maxH = 0;
 
   for (let i = 0; i < items.length; i++) {
     const { name, blob } = items[i];
     const url = URL.createObjectURL(blob);
     const img = await loadImage(url).catch(() => null);
     if (!img) { URL.revokeObjectURL(url); continue; }
+    if (img.naturalWidth > maxW) maxW = img.naturalWidth;
+    if (img.naturalHeight > maxH) maxH = img.naturalHeight;
 
     const thumb = document.createElement('canvas');
     thumb.width = THUMB_W; thumb.height = THUMB_H;
@@ -72,6 +75,7 @@ async function ingest(items, source, firstName, zipName, preserve, onProgress) {
   });
 
   p.frameKeys = p.frames.map((f) => shotKeyOf(f.name));
+  if (!preserve || !p.resW) { p.resW = maxW || 1920; p.resH = maxH || 1080; }
   const named = p.frameKeys.filter(Boolean).length;
   const distinct = new Set(p.frameKeys.filter(Boolean)).size;
   p.hasNamePattern = named >= p.frames.length * 0.8 && distinct >= 1;
