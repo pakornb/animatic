@@ -16,6 +16,8 @@ const BOARD_H = 60, RULER_H = 24, SEC_PER_PX = 0.012;
 const transport = new Transport(P);
 const slotEls = new Map();
 let selected = new Set();
+let resAspect = 16 / 9;
+let lastCurX = null;
 
 function isolationBadge() {
   const el = $('iso'); const ok = self.crossOriginIsolated === true;
@@ -51,7 +53,8 @@ function onLoaded() {
   $('stage').classList.remove('hidden');
   $('baseName').textContent = P.baseName;
   $('fps').value = P.fps; $('spot').value = P.spotSeconds; $('lenUnit').value = P.lenUnit;
-  $('resW').value = P.resW; $('resH').value = P.resH;
+  $('resW').value = P.resW; $('resH').value = P.resH; resAspect = P.resW / P.resH;
+  $('resPreset').value = '';
   $('falloff').value = P.falloffReach;
   $('falloffVal') && ($('falloffVal').textContent = P.falloffReach);
   $('falloffCurve').value = P.falloffCurve;
@@ -60,7 +63,17 @@ function onLoaded() {
   gm.options[1].disabled = !P.hasNamePattern;
   gm.options[1].textContent = P.hasNamePattern ? 'filename' : 'filename (none)';
   $('saveBtn').disabled = false;
-  transport.mountAudio(); syncAudioUI(); render();
+  transport.mountAudio(); syncAudioUI(); render(); updateCanvasGuide();
+}
+
+function updateCanvasGuide() {
+  const g = $('canvasGuide'); if (!g) return;
+  const box = g.parentElement; const bw = box.clientWidth, bh = box.clientHeight;
+  if (!bw || !bh) return;
+  let w = bw, h = bw / resAspect;
+  if (h > bh) { h = bh; w = bh * resAspect; }
+  w *= 0.94; h *= 0.94;
+  g.style.width = Math.round(w) + 'px'; g.style.height = Math.round(h) + 'px';
 }
 
 // ---------- render ----------
@@ -234,7 +247,14 @@ function updatePlayhead(sec) {
 function keepVisible(sec) { const sc = $('timeline'), x = sec * pps; if (x < sc.scrollLeft + 40 || x > sc.scrollLeft + sc.clientWidth - 40) sc.scrollLeft = x - sc.clientWidth * 0.3; }
 
 // ---------- zoom ----------
-function setZoom(mult) { const sc = $('timeline'), cs = (sc.scrollLeft + sc.clientWidth / 2) / pps; pps = Math.max(2, Math.min(6000, pps * mult)); buildTimeline(); updatePlayhead(transport.sec); sc.scrollLeft = cs * pps - sc.clientWidth / 2; }
+function setZoom(mult) {
+  const sc = $('timeline'); const rect = sc.getBoundingClientRect();
+  const cx = (lastCurX != null ? lastCurX - rect.left : sc.clientWidth / 2);
+  const centerSec = (sc.scrollLeft + cx) / pps;
+  pps = Math.max(2, Math.min(6000, pps * mult));
+  buildTimeline(); updatePlayhead(transport.sec);
+  sc.scrollLeft = centerSec * pps - cx;
+}
 function zoomFit() { pps = fitPps(); buildTimeline(); updatePlayhead(transport.sec); $('timeline').scrollLeft = 0; }
 
 // ---------- audio ----------
@@ -340,8 +360,10 @@ function wire() {
   $('fps').onchange = (e) => { mutate(() => { P.fps = Math.max(1, +e.target.value || 24); }); render(); };
   $('spot').onchange = (e) => { mutate(() => { P.spotSeconds = Math.max(1, +e.target.value || 30); }); render(); };
   $('lenUnit').onchange = (e) => { P.lenUnit = e.target.value; render(); };
-  $('resW').onchange = (e) => { P.resW = Math.max(1, +e.target.value || 1920); };
-  $('resH').onchange = (e) => { P.resH = Math.max(1, +e.target.value || 1080); };
+  $('resW').onchange = (e) => { P.resW = Math.max(1, +e.target.value || 1920); if ($('resLock').checked) { P.resH = Math.max(1, Math.round(P.resW / resAspect)); $('resH').value = P.resH; } else resAspect = P.resW / P.resH; updateCanvasGuide(); };
+  $('resH').onchange = (e) => { P.resH = Math.max(1, +e.target.value || 1080); if ($('resLock').checked) { P.resW = Math.max(1, Math.round(P.resH * resAspect)); $('resW').value = P.resW; } else resAspect = P.resW / P.resH; updateCanvasGuide(); };
+  $('resLock').onchange = (e) => { if (e.target.checked) resAspect = P.resW / P.resH; };
+  $('resPreset').onchange = (e) => { const v = e.target.value; if (!v) return; const [w, h] = v.split('x').map(Number); P.resW = w; P.resH = h; resAspect = w / h; $('resW').value = w; $('resH').value = h; updateCanvasGuide(); };
   $('groupMode').onchange = (e) => { mutate(() => { P.groupMode = e.target.value; }); selected.clear(); render(); };
   $('falloff').oninput = (e) => { P.falloffReach = +e.target.value; $('falloffVal').textContent = e.target.value; };
   $('falloffCurve').onchange = (e) => { P.falloffCurve = e.target.value; drawCurvePreview(); };
@@ -361,6 +383,10 @@ function wire() {
   $('stepFwd').onclick = () => boardNav(1);
   $('prevShot').onclick = () => shotNav(-1);
   $('nextShot').onclick = () => shotNav(1);
+
+  $('timeline').addEventListener('pointermove', (e) => { lastCurX = e.clientX; });
+  $('timeline').addEventListener('pointerleave', () => { lastCurX = null; });
+  $('timeline').addEventListener('wheel', (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); lastCurX = e.clientX; setZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15); } }, { passive: false });
 
   $('loadAudioBtn').onclick = () => $('audioInput').click();
   $('loadAudioBtn0').onclick = () => $('audioInput').click();
@@ -396,7 +422,7 @@ function wire() {
     }
   });
 
-  window.addEventListener('resize', () => { if (P.frames.length) { buildTimeline(); updatePlayhead(transport.sec); if (P.audio) drawWaveformLane(); } });
+  window.addEventListener('resize', () => { if (P.frames.length) { buildTimeline(); updatePlayhead(transport.sec); if (P.audio) drawWaveformLane(); updateCanvasGuide(); } });
 }
 
 wire();

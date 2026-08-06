@@ -11,7 +11,22 @@
     <span class="base" id="baseName"></span>
     <div class="ctrl"><span>fps</span><input type="number" id="fps" min="1" max="120" value="24" /></div>
     <div class="ctrl"><span>spot</span><input type="number" id="spot" min="1" max="600" value="30" /><span>s</span></div>
-    <div class="ctrl"><span>res</span><input type="number" id="resW" min="1" value="1920" style="width:64px" />×<input type="number" id="resH" min="1" value="1080" style="width:64px" /></div>
+    <div class="ctrl"><span>res</span>
+      <select id="resPreset" title="preset resolutions">
+        <option value="">preset…</option>
+        <option value="1920x1080">1920×1080 · 1080p</option>
+        <option value="3840x2160">3840×2160 · 4K UHD</option>
+        <option value="2048x1152">2048×1152</option>
+        <option value="1280x720">1280×720 · 720p</option>
+        <option value="2560x1440">2560×1440 · 1440p</option>
+        <option value="1920x1440">1920×1440 · 4:3</option>
+        <option value="1080x1080">1080×1080 · square</option>
+        <option value="1080x1920">1080×1920 · vertical</option>
+        <option value="1920x816">1920×816 · 2.35:1</option>
+      </select>
+      <input type="number" id="resW" min="1" value="1920" style="width:60px" />×<input type="number" id="resH" min="1" value="1080" style="width:60px" />
+      <label class="lock" title="lock aspect ratio"><input type="checkbox" id="resLock" checked /> 🔒</label>
+    </div>
     <span class="hspace"></span>
     <button class="btn ghost sm" id="openWorkBtn">Open</button>
     <button class="btn ghost sm" id="saveBtn" disabled>Save</button>
@@ -54,6 +69,7 @@
     <div class="hidden stage" id="stage">
       <div class="stage-main">
         <div class="preview">
+          <div class="canvas-guide" id="canvasGuide"></div>
           <img id="preview" alt="" />
           <div class="meta" id="previewMeta"></div>
         </div>
@@ -67,8 +83,6 @@
           <button class="tbtn" id="nextShot" title="next shot (Shift+→)">»</button>
           <button class="tbtn" id="toEnd" title="end">⏭</button>
           <span class="clock" id="clock">0:00.00 / 0:30.00</span>
-          <span class="hspace"></span>
-          <button class="btn ghost sm" id="loadAudioBtn0" title="load scratch VO / music">Load audio…</button>
         </div>
 
         <div class="timeline-wrap">
@@ -85,6 +99,10 @@
                 <option value="easeOut">wide</option>
               </select>
               <canvas id="curvePrev" class="curve-prev" title="falloff shape (center → reach)"></canvas>
+              <span class="sep"></span>
+              <button class="btn ghost sm" id="autoBtn" title="fill unpinned boards to hit the spot">auto</button>
+              <button class="btn ghost sm" id="rebalBtn" title="scale unpinned boards to the spot">rebalance</button>
+              <button class="btn ghost sm" id="loadAudioBtn0" title="load scratch VO / music">load audio</button>
             </span>
             <span class="tl-tools">
               <button class="tbtn sm" id="clearSelBtn" title="clear selection (Esc)">✕ sel</button>
@@ -134,10 +152,6 @@
             <label>length
               <select id="lenUnit"><option value="sec">seconds</option><option value="frames">frames</option></select>
             </label>
-          </div>
-          <div class="tp-row">
-            <button class="btn ghost sm" id="autoBtn" title="give every unpinned board an equal share to fill the spot">auto-estimate</button>
-            <button class="btn ghost sm" id="rebalBtn" title="scale unpinned boards so the total hits the spot">rebalance</button>
           </div>
         </div>
         <div class="insp-scroll" id="inspector"></div>

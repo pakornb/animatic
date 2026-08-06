@@ -69,11 +69,10 @@ export function fmtTC(frame, fps) {
 }
 
 export function fmtClock(sec) {
-  const s = Math.max(0, sec);
-  const whole = Math.floor(s);
-  const cs = Math.round((s - whole) * 100);
+  const cs = Math.max(0, Math.round(sec * 100));
+  const c = cs % 100, whole = Math.floor(cs / 100);
   const m = Math.floor(whole / 60), r = whole % 60;
-  return `${m}:${pad2(r)}.${pad2(cs)}`;
+  return `${m}:${pad2(r)}.${pad2(c)}`;
 }
 
 // ---- shot computation (filename grouping OR diff cuts, plus manual overrides) ----
