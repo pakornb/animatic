@@ -23,13 +23,29 @@ function shotMontage(sh, cols = 3, cell = 200) {
 }
 
 function loadImg(src) { return new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; }); }
-async function assetThumbFor(a) {
-  if (!a.thumb) return null;
-  if (!a.annos || !a.annos.length) return a.thumb;
-  const im = await loadImg(a.thumb); if (!im) return a.thumb;
-  const cv = document.createElement('canvas'); cv.width = im.width; cv.height = im.height;
-  const ctx = cv.getContext('2d'); ctx.drawImage(im, 0, 0); drawAnnos(ctx, a.annos, cv.width, cv.height);
-  return cv.toDataURL('image/jpeg', 0.8);
+
+// best available source image for an asset (picked board = full-res original;
+// custom upload = stored full-res; else the small thumb). Returns {img, revoke}.
+async function assetSourceImg(a) {
+  if (a.thumbFrom && a.thumbFrom !== 'upload') {
+    const f = P.frames.find((fr) => fr.name === a.thumbFrom);
+    if (f && f.full) { const url = URL.createObjectURL(f.full); const img = await loadImg(url); return { img, revoke: () => URL.revokeObjectURL(url) }; }
+  }
+  if (a.src) return { img: await loadImg(a.src), revoke: () => {} };
+  if (a.thumb) return { img: await loadImg(a.thumb), revoke: () => {} };
+  return { img: null, revoke: () => {} };
+}
+
+// composited reference for export/preview/sheet: 320px wide from best source + annotations
+async function assetExportThumb(a, W = 320) {
+  const { img, revoke } = await assetSourceImg(a);
+  if (!img) { revoke(); return { url: a.thumb || null, w: a.thumbW || 240, h: a.thumbH || 135 }; }
+  const h = Math.round(W * img.naturalHeight / img.naturalWidth);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = h;
+  const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0, W, h);
+  if (a.annos && a.annos.length) drawAnnos(ctx, a.annos, W, h);
+  revoke();
+  return { url: cv.toDataURL('image/jpeg', 0.82), w: W, h };
 }
 
 export async function buildBreakdownData(withThumbs = true) {
@@ -45,7 +61,9 @@ export async function buildBreakdownData(withThumbs = true) {
   });
   const assets = [];
   for (const a of P.assets) {
-    assets.push({ name: a.name, cat: a.cat, tasks: a.tasks || {}, thumbnail: withThumbs ? await assetThumbFor(a) : null, thumbW: a.thumbW || 240, thumbH: a.thumbH || 135 });
+    let th = { url: null, w: 320, h: 180 };
+    if (withThumbs && a.thumb) th = await assetExportThumb(a, 320);
+    assets.push({ name: a.name, cat: a.cat, tasks: a.tasks || {}, thumbnail: th.url, thumbW: th.w, thumbH: th.h });
   }
   return { kind: 'breakdown', lenUnit: P.lenUnit, fps: P.fps, shotTasks: P.shotTasks, assetTasks: P.assetTasks, assetCats: P.assetCats, shots, assets };
 }
@@ -59,22 +77,23 @@ export async function exportBreakdownJSON() {
 }
 
 // ---------- modal shell ----------
-function modal(title, bodyBuilder, wide) {
-  closeModal();
+function modal(title, bodyBuilder, wide, onClose) {
+  closeModal(false);
   const root = document.getElementById('modalRoot');
   const back = document.createElement('div'); back.className = 'modal-back'; back.id = 'activeModal';
+  back._onClose = onClose || null;
   const box = document.createElement('div'); box.className = 'modal' + (wide ? ' wide' : '');
   const head = document.createElement('div'); head.className = 'modal-head';
   head.innerHTML = `<b>${title}</b>`;
-  const x = document.createElement('button'); x.className = 'tbtn sm'; x.textContent = '✕'; x.onclick = closeModal;
+  const x = document.createElement('button'); x.className = 'tbtn sm'; x.textContent = '✕'; x.onclick = () => closeModal(true);
   head.appendChild(x);
   const body = document.createElement('div'); body.className = 'modal-body';
   box.append(head, body); back.appendChild(box); root.appendChild(back);
-  back.addEventListener('pointerdown', (e) => { if (e.target === back) closeModal(); });
+  back.addEventListener('pointerdown', (e) => { if (e.target === back) closeModal(true); });
   bodyBuilder(body);
   return body;
 }
-export function closeModal() { const m = document.getElementById('activeModal'); if (m) m.remove(); }
+export function closeModal(runHook = true) { const m = document.getElementById('activeModal'); if (!m) return; const h = m._onClose; m.remove(); if (runHook && h) h(); }
 
 // ---------- asset window ----------
 export function openAssetWindow() {
@@ -166,34 +185,36 @@ function pickBoard(id, body) {
       c.onclick = () => {
         const cv = document.createElement('canvas'); cv.width = 240; cv.height = Math.round(240 * f.thumb.height / f.thumb.width);
         cv.getContext('2d').drawImage(f.thumb, 0, 0, cv.width, cv.height);
-        mutate(() => { setAssetField(P, id, 'thumb', cv.toDataURL('image/jpeg', 0.75)); setAssetField(P, id, 'thumbFrom', f.name); setAssetField(P, id, 'thumbW', cv.width); setAssetField(P, id, 'thumbH', cv.height); setAssetField(P, id, 'annos', []); });
+        mutate(() => { setAssetField(P, id, 'thumb', cv.toDataURL('image/jpeg', 0.75)); setAssetField(P, id, 'thumbFrom', f.name); setAssetField(P, id, 'src', null); setAssetField(P, id, 'thumbW', cv.width); setAssetField(P, id, 'thumbH', cv.height); setAssetField(P, id, 'annos', []); });
         openAssetWindow();
       };
       grid.appendChild(c);
     });
     mb.appendChild(grid);
-  }, true);
+  }, true, () => openAssetWindow());
 }
 
-function openAssetAnnotate(id, body) {
+async function openAssetAnnotate(id, body) {
   const a = getAsset(P, id); if (!a || !a.thumb) return;
-  modal('Annotate reference — ' + (a.name || ''), (mb) => {
+  const { img, revoke } = await assetSourceImg(a);
+  modal('Annotate reference — ' + (a.name || '') + '  (Esc / ✕ to return)', (mb) => {
     const host = el('div', 'anno-host'); host.style.position = 'relative';
-    const img = document.createElement('img'); img.className = 'anno-img'; img.src = a.thumb;
-    host.appendChild(img); mb.appendChild(host);
+    const im = document.createElement('img'); im.className = 'anno-img'; im.src = img ? img.src : a.thumb;
+    host.appendChild(im); mb.appendChild(host);
     const barSlot = el('div', 'anno-bar-wrap'); mb.appendChild(barSlot);
-    img.onload = () => {
-      const ctrl = createAnnotator(host, img, a.annos || [], (strokes) => { mutate(() => setAssetField(P, id, 'annos', strokes)); });
-      barSlot.appendChild(annotatorToolbar(ctrl));
-    };
-  }, true);
+    im.onload = () => { const ctrl = createAnnotator(host, im, a.annos || [], (strokes) => { mutate(() => setAssetField(P, id, 'annos', strokes)); }); barSlot.appendChild(annotatorToolbar(ctrl)); };
+  }, true, () => { revoke(); openAssetWindow(); });
 }
 function uploadThumb(id, body) {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
   inp.onchange = () => {
     const file = inp.files[0]; if (!file) return;
     const r = new FileReader();
-    r.onload = () => { const img = new Image(); img.onload = () => { const cv = document.createElement('canvas'); cv.width = 240; cv.height = Math.round(240 * img.height / img.width); cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); mutate(() => { setAssetField(P, id, 'thumb', cv.toDataURL('image/jpeg', 0.75)); setAssetField(P, id, 'thumbFrom', 'upload'); setAssetField(P, id, 'thumbW', cv.width); setAssetField(P, id, 'thumbH', cv.height); setAssetField(P, id, 'annos', []); }); renderAssets(document.querySelector('#activeModal .modal-body')); }; img.src = r.result; };
+    r.onload = () => { const img = new Image(); img.onload = () => {
+      const cv = document.createElement('canvas'); cv.width = 240; cv.height = Math.round(240 * img.height / img.width); cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      const capW = Math.min(1600, img.width); const fc = document.createElement('canvas'); fc.width = capW; fc.height = Math.round(capW * img.height / img.width); fc.getContext('2d').drawImage(img, 0, 0, fc.width, fc.height);
+      mutate(() => { setAssetField(P, id, 'thumb', cv.toDataURL('image/jpeg', 0.75)); setAssetField(P, id, 'src', fc.toDataURL('image/jpeg', 0.85)); setAssetField(P, id, 'thumbFrom', 'upload'); setAssetField(P, id, 'thumbW', cv.width); setAssetField(P, id, 'thumbH', cv.height); setAssetField(P, id, 'annos', []); });
+      renderAssets(document.querySelector('#activeModal .modal-body')); }; img.src = r.result; };
     r.readAsDataURL(file);
   };
   inp.click();

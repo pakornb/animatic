@@ -177,6 +177,7 @@ function buildTimeline() {
     inner.insertBefore(d, ph);
   });
   drawRuler();
+  layoutAudioClip();
 }
 function positionSlots() {
   const { boards } = timeline(P);
@@ -278,7 +279,6 @@ function onTick(sec, playing) {
   }
   $('clock').textContent = `${fmtClock(sec)} / ${fmtClock(P.spotSeconds)}`;
   $('playBtn').textContent = playing ? '❚❚' : '▶';
-  if (P.audio) drawWaveformLane();
 }
 function updatePlayhead(sec) {
   $('playhead').style.left = sec * pps + 'px';
@@ -302,12 +302,32 @@ function zoomFit() { pps = fitPps(); buildTimeline(); updatePlayhead(transport.s
 
 // ---------- audio ----------
 async function loadAudio(file) { try { overlay('Decoding audio…'); P.audio = await loadAudioFile(file); transport.mountAudio(); syncAudioUI(); toast('Audio loaded'); } catch (e) { console.error(e); toast('Could not load audio'); } finally { overlay(false); } }
-function syncAudioUI() { const has = !!P.audio; $('audioLane').classList.toggle('hidden', !has); $('audioName').textContent = has ? P.audio.name : ''; if (!has) return; drawWaveformLane(); drawSlipReadout(); $('useAudioLen').disabled = !P.audio.duration; }
-function drawWaveformLane() { const c = $('wave'); c.width = c.clientWidth || 600; c.height = 44; const a = P.audio; const at = a ? transport.sec - (a.offsetSec || 0) + (a.inSec ?? 0) : null; drawWaveform(c, a, { fps: P.fps, markerSec: at }); }
+function syncAudioUI() { const has = !!P.audio; $('audioLane').classList.toggle('hidden', !has); $('audioName').textContent = has ? P.audio.name : ''; if (!has) { layoutAudioClip(); return; } drawSlipReadout(); $('useAudioLen').disabled = !P.audio.duration; layoutAudioClip(); }
+function layoutAudioClip() {
+  let clip = document.getElementById('audioClip');
+  if (!P.audio) { if (clip) clip.remove(); return; }
+  if (!clip) {
+    clip = document.createElement('div'); clip.className = 'audio-clip'; clip.id = 'audioClip';
+    const cv = document.createElement('canvas'); cv.className = 'aud-wave'; clip.appendChild(cv);
+    const lbl = document.createElement('span'); lbl.className = 'aud-label'; clip.appendChild(lbl);
+    $('tlInner').appendChild(clip); attachAudioClipDrag(clip);
+  }
+  const off = P.audio.offsetSec || 0, dur = P.audio.duration || 0, w = Math.max(24, Math.round(dur * pps));
+  clip.style.left = off * pps + 'px'; clip.style.width = w + 'px';
+  const cv = clip.querySelector('canvas'); cv.width = w; cv.height = 36; cv.style.width = w + 'px'; cv.style.height = '36px';
+  drawWaveform(cv, P.audio, {});
+  clip.querySelector('.aud-label').textContent = P.audio.name;
+}
+function attachAudioClipDrag(clip) {
+  let dragging = false, x0 = 0, off0 = 0;
+  clip.addEventListener('pointerdown', (e) => { if (!P.audio) return; dragging = true; x0 = e.clientX; off0 = P.audio.offsetSec || 0; clip.classList.add('dragging'); clip.setPointerCapture(e.pointerId); beginGesture(); e.stopPropagation(); });
+  clip.addEventListener('pointermove', (e) => { if (!dragging) return; let off = off0 + (e.clientX - x0) / pps; off = Math.round(off * P.fps) / P.fps; P.audio.offsetSec = off; clip.style.left = off * pps + 'px'; drawSlipReadout(); });
+  clip.addEventListener('pointerup', (e) => { if (!dragging) return; dragging = false; clip.classList.remove('dragging'); clip.releasePointerCapture?.(e.pointerId); commitGesture(); refreshUndoButtons(); transport.seek(transport.sec); });
+}
 function drawSlipReadout() { const a = P.audio; if (!a) return; const fr = Math.round((a.offsetSec || 0) * P.fps); $('slipVal').textContent = `offset ${fr >= 0 ? '+' : ''}${fr}f (${fmtClock(Math.abs(a.offsetSec || 0))})`; }
-function nudgeSlip(df) { const a = P.audio; if (!a) return; mutate(() => { a.offsetSec = (a.offsetSec || 0) + df / P.fps; }); drawSlipReadout(); drawWaveformLane(); transport.seek(transport.sec); refreshUndoButtons(); }
-function nudgeSlipSec(d) { const a = P.audio; if (!a) return; mutate(() => { a.offsetSec = (a.offsetSec || 0) + d; }); drawSlipReadout(); drawWaveformLane(); transport.seek(transport.sec); refreshUndoButtons(); }
-function setSyncToPlayhead() { const a = P.audio; if (!a) return; mutate(() => { a.offsetSec = transport.sec; }); drawSlipReadout(); drawWaveformLane(); transport.seek(transport.sec); refreshUndoButtons(); toast('Audio start set to playhead'); }
+function nudgeSlip(df) { const a = P.audio; if (!a) return; mutate(() => { a.offsetSec = (a.offsetSec || 0) + df / P.fps; }); drawSlipReadout(); layoutAudioClip(); transport.seek(transport.sec); refreshUndoButtons(); }
+function nudgeSlipSec(d) { const a = P.audio; if (!a) return; mutate(() => { a.offsetSec = (a.offsetSec || 0) + d; }); drawSlipReadout(); layoutAudioClip(); transport.seek(transport.sec); refreshUndoButtons(); }
+function setSyncToPlayhead() { const a = P.audio; if (!a) return; mutate(() => { a.offsetSec = transport.sec; }); drawSlipReadout(); layoutAudioClip(); transport.seek(transport.sec); refreshUndoButtons(); toast('Audio start set to playhead'); }
 
 // ---------- utils ----------
 function overlay(msg) { const o = $('overlay'); if (msg === false) { o.classList.add('hidden'); return; } o.querySelector('span').textContent = msg; o.classList.remove('hidden'); }
@@ -463,11 +483,6 @@ function wire() {
   $('setSync').onclick = setSyncToPlayhead;
   $('useAudioLen').onclick = () => { if (P.audio?.duration) { mutate(() => { P.spotSeconds = Math.round(P.audio.duration * 100) / 100; }); $('spot').value = P.spotSeconds; render(); toast('Spot set to audio length'); } };
 
-  const lane = $('wave'); let adr = false, ax0 = 0, aoff0 = 0;
-  lane.addEventListener('pointerdown', (e) => { if (!P.audio) return; adr = true; ax0 = e.clientX; aoff0 = P.audio.offsetSec || 0; lane.setPointerCapture(e.pointerId); beginGesture(); });
-  lane.addEventListener('pointermove', (e) => { if (!adr || !P.audio) return; const total = Math.max(timeline(P).total, P.spotSeconds); const spp = total / (lane.clientWidth || 600); let off = aoff0 + (e.clientX - ax0) * spp; off = Math.round(off * P.fps) / P.fps; P.audio.offsetSec = off; drawSlipReadout(); drawWaveformLane(); transport.seek(transport.sec); });
-  lane.addEventListener('pointerup', () => { if (adr) { adr = false; commitGesture(); refreshUndoButtons(); } });
-
   ['dragenter', 'dragover'].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); const d = $('drop'); if (d) d.classList.add('hot'); }));
   ['dragleave', 'drop'].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); if (ev === 'dragleave' && e.relatedTarget) return; const d = $('drop'); if (d) d.classList.remove('hot'); }));
   document.addEventListener('drop', (e) => { e.preventDefault(); const files = [...e.dataTransfer.files]; if (!files.length) return; const audio = files.find((f) => /\.(mp3|wav|m4a|aac|ogg)$/i.test(f.name)); const work = files.find((f) => /\.json$/i.test(f.name)); if (audio && P.frames.length) loadAudio(audio); else if (work && files.length === 1) openWork(work); else loadImages(files); });
@@ -494,7 +509,7 @@ function wire() {
     }
   });
 
-  window.addEventListener('resize', () => { if (P.frames.length) { buildTimeline(); updatePlayhead(transport.sec); if (P.audio) drawWaveformLane(); updateCanvasGuide(); } });
+  window.addEventListener('resize', () => { if (P.frames.length) { buildTimeline(); updatePlayhead(transport.sec); layoutAudioClip(); updateCanvasGuide(); } });
 }
 
 wire();

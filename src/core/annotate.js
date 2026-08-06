@@ -70,29 +70,98 @@ export function createAnnotator(host, imageEl, strokes, onCommit) {
   function redraw() { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); drawAnnos(ctx, cur, canvas.width, canvas.height); }
   const norm = (e) => { const b = canvas.getBoundingClientRect(); return { x: (e.clientX - b.left) / b.width, y: (e.clientY - b.top) / b.height }; };
 
-  let drawing = null;
+  let drawing = null, selIdx = -1, mode = null, hIdx = -1, startPts = null, startPt = null;
+
+  function bbox(s) {
+    if (s.type === 'text') return { x0: s.pts[0].x, y0: s.pts[0].y, x1: s.pts[0].x + 0.14, y1: s.pts[0].y + 0.06 };
+    let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+    s.pts.forEach((p) => { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); });
+    return { x0, y0, x1, y1 };
+  }
+  function near(a, b, d = 0.02) { return Math.hypot(a.x - b.x, a.y - b.y) < d; }
+  function hitStroke(p) {
+    for (let i = cur.length - 1; i >= 0; i--) {
+      const s = cur[i], bb = bbox(s);
+      if (p.x >= bb.x0 - 0.015 && p.x <= bb.x1 + 0.015 && p.y >= bb.y0 - 0.015 && p.y <= bb.y1 + 0.015) return i;
+    }
+    return -1;
+  }
+  function handleAt(s, p) {
+    if (s.type === 'text' || s.type === 'free') return -1;
+    if (near(p, s.pts[0])) return 0;
+    if (near(p, s.pts[1])) return 1;
+    return -1;
+  }
+
+  let onCommitCb = onCommit;
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
-    if (tool === 'text') { const t = prompt('Label text:'); if (t) { cur.push({ type: 'text', color, pts: [norm(e)], text: t }); commit(); } return; }
-    drawing = { type: tool, color, pts: [norm(e), norm(e)] };
-    if (tool === 'free') drawing.pts = [norm(e)];
+    const p = norm(e);
+    if (tool === 'select') {
+      startPt = p;
+      if (selIdx >= 0) { const h = handleAt(cur[selIdx], p); if (h >= 0) { mode = 'handle'; hIdx = h; startPts = cur[selIdx].pts.map((q) => ({ ...q })); return; } }
+      const i = hitStroke(p);
+      selIdx = i;
+      if (i >= 0) { mode = 'move'; startPts = cur[i].pts.map((q) => ({ ...q })); }
+      else mode = null;
+      redraw();
+      return;
+    }
+    if (tool === 'text') { const t = prompt('Label text:'); if (t) { cur.push({ type: 'text', color, pts: [p], text: t }); commit(); } return; }
+    drawing = { type: tool, color, pts: [p, p] };
+    if (tool === 'free') drawing.pts = [p];
   });
   canvas.addEventListener('pointermove', (e) => {
+    const p = norm(e);
+    if (tool === 'select' && mode && selIdx >= 0) {
+      const s = cur[selIdx];
+      if (mode === 'move') { const dx = p.x - startPt.x, dy = p.y - startPt.y; s.pts = startPts.map((q) => ({ x: q.x + dx, y: q.y + dy })); }
+      else if (mode === 'handle') { s.pts = startPts.map((q) => ({ ...q })); s.pts[hIdx] = p; }
+      redraw(); return;
+    }
     if (!drawing) return;
-    if (drawing.type === 'free') drawing.pts.push(norm(e)); else drawing.pts[1] = norm(e);
+    if (drawing.type === 'free') drawing.pts.push(p); else drawing.pts[1] = p;
     const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); drawAnnos(ctx, cur.concat([drawing]), canvas.width, canvas.height);
   });
-  canvas.addEventListener('pointerup', () => { if (!drawing) return; const d = drawing; drawing = null; const a = d.pts[0], b = d.pts[d.pts.length - 1]; if (d.type !== 'free' && Math.hypot((b.x - a.x), (b.y - a.y)) < 0.01) return; cur.push(d); commit(); });
+  canvas.addEventListener('pointerup', () => {
+    if (tool === 'select') { if (mode) { mode = null; startPts = null; commit(); } return; }
+    if (!drawing) return;
+    const d = drawing; drawing = null;
+    const a = d.pts[0], b = d.pts[d.pts.length - 1];
+    if (d.type !== 'free' && Math.hypot(b.x - a.x, b.y - a.y) < 0.01) return;
+    cur.push(d); selIdx = cur.length - 1; commit();
+  });
 
-  function commit() { redraw(); onCommit && onCommit(cur.slice()); }
+  function deleteSelected() { if (selIdx >= 0) { cur.splice(selIdx, 1); selIdx = -1; commit(); } }
+  function keyHandler(e) {
+    if (tool !== 'select' || selIdx < 0) return;
+    if (/input|textarea|select/i.test(e.target.tagName)) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
+  }
+  window.addEventListener('keydown', keyHandler);
+
+  function drawSelection() {
+    if (tool !== 'select' || selIdx < 0 || !cur[selIdx]) return;
+    const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height, s = cur[selIdx], bb = bbox(s);
+    ctx.save();
+    ctx.strokeStyle = '#4ea8de'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
+    ctx.strokeRect(bb.x0 * W - 3, bb.y0 * H - 3, (bb.x1 - bb.x0) * W + 6, (bb.y1 - bb.y0) * H + 6);
+    ctx.setLineDash([]);
+    if (s.type !== 'text' && s.type !== 'free') { [s.pts[0], s.pts[1]].forEach((q) => { ctx.fillStyle = '#4ea8de'; ctx.fillRect(q.x * W - 4, q.y * H - 4, 8, 8); }); }
+    ctx.restore();
+  }
+  function redraw() { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); drawAnnos(ctx, cur, canvas.width, canvas.height); drawSelection(); }
+
+  function commit() { redraw(); onCommitCb && onCommitCb(cur.slice()); }
   const ctrl = {
     canvas,
-    setTool: (t) => { tool = t; }, setColor: (c) => { color = c; },
-    undo: () => { cur.pop(); commit(); },
-    clear: () => { cur = []; commit(); },
+    setTool: (t) => { tool = t; if (t !== 'select') selIdx = -1; redraw(); }, setColor: (c) => { color = c; if (selIdx >= 0 && tool === 'select') { cur[selIdx].color = c; commit(); } },
+    undo: () => { cur.pop(); selIdx = -1; commit(); },
+    clear: () => { cur = []; selIdx = -1; commit(); },
+    deleteSelected,
     getStrokes: () => cur.slice(),
     reflow: place,
-    destroy: () => { canvas.remove(); },
+    destroy: () => { window.removeEventListener('keydown', keyHandler); canvas.remove(); },
   };
   place();
   return ctrl;
@@ -101,18 +170,19 @@ export function createAnnotator(host, imageEl, strokes, onCommit) {
 // A reusable toolbar element for an annotator controller.
 export function annotatorToolbar(ctrl) {
   const bar = document.createElement('div'); bar.className = 'anno-bar';
-  const tools = [['arrow', '↗'], ['box', '▢'], ['ellipse', '◯'], ['free', '✎'], ['text', 'T']];
+  const tools = [['select', '▸'], ['arrow', '↗'], ['box', '▢'], ['ellipse', '◯'], ['free', '✎'], ['text', 'T']];
   let curBtn = null;
   tools.forEach(([t, label], i) => {
-    const b = document.createElement('button'); b.className = 'anno-tool'; b.textContent = label; b.title = t;
-    if (i === 0) { b.classList.add('on'); curBtn = b; }
+    const b = document.createElement('button'); b.className = 'anno-tool'; b.textContent = label; b.title = t === 'select' ? 'select / move / resize' : t;
+    if (i === 0) { b.classList.add('on'); curBtn = b; ctrl.setTool('select'); }
     b.onclick = () => { ctrl.setTool(t); if (curBtn) curBtn.classList.remove('on'); b.classList.add('on'); curBtn = b; };
     bar.appendChild(b);
   });
   const sep = document.createElement('span'); sep.className = 'anno-sep'; bar.appendChild(sep);
   ANNO_COLORS.forEach((c, i) => { const s = document.createElement('button'); s.className = 'anno-color' + (i === 0 ? ' on' : ''); s.style.background = c; s.onclick = () => { ctrl.setColor(c); bar.querySelectorAll('.anno-color').forEach((x) => x.classList.remove('on')); s.classList.add('on'); }; bar.appendChild(s); });
   const sep2 = document.createElement('span'); sep2.className = 'anno-sep'; bar.appendChild(sep2);
-  const undo = document.createElement('button'); undo.className = 'anno-tool'; undo.textContent = '⤺'; undo.title = 'undo'; undo.onclick = () => ctrl.undo(); bar.appendChild(undo);
+  const del = document.createElement('button'); del.className = 'anno-tool'; del.textContent = '⌫'; del.title = 'delete selected (Del)'; del.onclick = () => ctrl.deleteSelected(); bar.appendChild(del);
+  const undo = document.createElement('button'); undo.className = 'anno-tool'; undo.textContent = '⤺'; undo.title = 'remove last'; undo.onclick = () => ctrl.undo(); bar.appendChild(undo);
   const clr = document.createElement('button'); clr.className = 'anno-tool'; clr.textContent = 'clear'; clr.onclick = () => ctrl.clear(); bar.appendChild(clr);
   return bar;
 }

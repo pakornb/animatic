@@ -136,21 +136,16 @@
           </div>
 
           <div class="audio-lane hidden" id="audioLane">
-            <div class="audio-head">
-              <button class="btn ghost sm" id="loadAudioBtn">Load audio…</button>
-              <span class="audio-name" id="audioName"></span>
-              <button class="btn ghost sm" id="useAudioLen" title="set spot length to audio length">use audio length</button>
-            </div>
-            <canvas id="wave" title="drag to slip (snaps to frames)"></canvas>
-            <div class="slip">
-              <span class="slip-label">audio</span>
-              <button class="tbtn sm" id="slipMinus1">−1f</button>
-              <button class="tbtn sm" id="slipMinusS">−0.1s</button>
-              <span class="slip-val" id="slipVal">offset +0f</span>
-              <button class="tbtn sm" id="slipPlusS">+0.1s</button>
-              <button class="tbtn sm" id="slipPlus1">+1f</button>
-              <button class="btn ghost sm" id="setSync" title="set audio start to the current frame">set sync to playhead</button>
-            </div>
+            <button class="btn ghost sm" id="loadAudioBtn">Load audio…</button>
+            <span class="audio-name" id="audioName"></span>
+            <span class="slip-label">slip</span>
+            <button class="tbtn sm" id="slipMinus1">−1f</button>
+            <button class="tbtn sm" id="slipMinusS">−0.1s</button>
+            <span class="slip-val" id="slipVal">offset +0f</span>
+            <button class="tbtn sm" id="slipPlusS">+0.1s</button>
+            <button class="tbtn sm" id="slipPlus1">+1f</button>
+            <button class="btn ghost sm" id="setSync" title="set audio start to the current frame">set sync to playhead</button>
+            <button class="btn ghost sm" id="useAudioLen" title="set spot length to audio length">use audio length</button>
           </div>
         </div>
       </div>
