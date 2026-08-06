@@ -7,15 +7,25 @@
 </head>
 <body>
   <header>
-    <h1><span class="dot">▍</span> Animatic <span class="base">viewer</span></h1>
-    <span class="stats" id="stats"></span>
+    <h1><span class="dot">▍</span> Animatic <span class="base" id="vBase">viewer</span></h1>
+    <span class="hspace"></span>
+    <label class="lock"><input type="checkbox" id="annoToggle" checked /> annotations</label>
   </header>
   <main>
-    <div class="preview">
+    <div class="preview" id="loadView">
       <div class="drop" id="drop">
         <h2>Read-only animatic viewer</h2>
         <p id="msg">Open a viewer link, or drop a viewer JSON here.</p>
         <button class="btn" id="pickBtn">Open viewer JSON…</button>
+      </div>
+    </div>
+
+    <div class="hidden player" id="player">
+      <div class="viewer-screen"><canvas id="screen"></canvas><div class="meta" id="vMeta"></div></div>
+      <div class="transport">
+        <button class="tbtn play" id="playBtn" title="play/pause (Space)">▶</button>
+        <input type="range" id="scrub" min="0" max="30" step="0.01" value="0" />
+        <span class="clock" id="vClock">0:00.00 / 0:30.00</span>
       </div>
     </div>
   </main>

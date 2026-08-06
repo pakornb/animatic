@@ -214,3 +214,27 @@ table.sheet td{padding:4px 8px;border:1px solid var(--line);vertical-align:middl
 table.sheet tr.dis{opacity:.5}
 .sheet-thumb{max-width:200px;max-height:70px;display:block}
 .mini.addtask{margin-left:8px;font-size:10px}
+
+/* ---- step 4: annotation, viewer, menu ---- */
+.menu-sep{height:1px;background:var(--line);margin:4px 2px}
+.tbtn.annobtn.on,.tbtn.sm.annobtn.on{background:var(--cut);color:#1a1206;border-color:var(--cut)}
+.preview{position:relative}
+.anno-canvas{position:absolute;z-index:6;cursor:crosshair;touch-action:none}
+.anno-bar-wrap{display:flex;justify-content:center;padding:6px 14px;background:var(--panel);border-top:1px solid var(--line)}
+.anno-bar{display:flex;align-items:center;gap:5px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 8px}
+.anno-tool{background:var(--panel);border:1px solid var(--line);color:var(--text);font-family:var(--mono);font-size:13px;min-width:28px;height:26px;border-radius:5px;cursor:pointer}
+.anno-tool.on{background:var(--head);color:#08131c;border-color:var(--head)}
+.anno-sep{width:1px;height:18px;background:var(--line);margin:0 3px}
+.anno-color{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+.anno-color.on{border-color:#fff}
+.anno-host{position:relative;display:flex;justify-content:center;background:#000;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.anno-img{max-width:100%;max-height:60vh;display:block}
+.slot.has-anno::before{content:'';position:absolute;top:14px;left:3px;width:8px;height:8px;border-radius:50%;background:var(--cut);z-index:2;box-shadow:0 0 0 1px #000}
+.asset-thumb{position:relative}
+.asset-anno-ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+/* viewer */
+.player{display:flex;flex-direction:column;height:100%}
+.viewer-screen{flex:1;position:relative;display:flex;align-items:center;justify-content:center;background:#0a0b0d;min-height:0}
+.viewer-screen canvas{max-width:100%;max-height:100%;display:block}
+.viewer-screen .meta{position:absolute;left:10px;bottom:8px;font-family:var(--mono);font-size:11px;color:var(--muted);background:rgba(0,0,0,.5);padding:2px 6px;border-radius:3px}

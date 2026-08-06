@@ -1,8 +1,10 @@
 import '../style.css';
 import {
   project as P, computeShots, timeline, resolveAt, autoEstimate, rebalance,
-  retimeBoard, retimeGroup, offsetBoard, offsetGroup, boardDur, setBoardDur, enabledFlat, falloffWeight, fmtClock,
+  retimeBoard, retimeGroup, offsetBoard, offsetGroup, boardDur, setBoardDur, enabledFlat, falloffWeight,
+  getAnnos, setAnnos, hasAnnos, fmtClock,
 } from '../core/model.js';
+import { createAnnotator, annotatorToolbar } from '../core/annotate.js';
 import { loadFromFiles, loadFromZip } from '../core/frames.js';
 import { saveWorkFile, openWorkFile } from '../io/workfile.js';
 import { loadAudioFile, drawWaveform } from '../io/audio.js';
@@ -11,6 +13,8 @@ import { Transport } from './transport.js';
 import { mutate, undo, redo, clearHistory, canUndo, canRedo, beginGesture, commitGesture } from '../core/history.js';
 import { APPS_SCRIPT } from '../io/appsScript.js';
 import { openAssetWindow, openPreview, exportBreakdownJSON, setRefresh, closeModal } from './assets.js';
+import { exportMp4 } from '../io/mp4.js';
+import { exportViewer } from '../io/viewer.js';
 
 const $ = (id) => document.getElementById(id);
 let cur = 0, lastShot = -1, pps = null;
@@ -21,6 +25,26 @@ let selected = new Set();
 let selAnchor = null;
 let resAspect = 16 / 9;
 let lastCurX = null;
+let annoMode = false, annoCtrl = null, lastAnnoFrame = -1;
+
+function toggleAnnotate() {
+  annoMode = !annoMode;
+  $('annotateBtn').classList.toggle('on', annoMode);
+  if (annoMode) { transport.pause(); enterAnnotate(); } else exitAnnotate();
+}
+function enterAnnotate() {
+  exitAnnotate();
+  const img = $('preview'); if (!img.naturalWidth) { img.onload = () => { if (annoMode) enterAnnotate(); }; return; }
+  annoCtrl = createAnnotator($('previewWrap'), img, getAnnos(P, cur), (strokes) => {
+    mutate(() => setAnnos(P, cur, strokes));
+    const el = slotEls.get(cur); if (el) el.classList.toggle('has-anno', strokes.length > 0);
+    refreshUndoButtons();
+  });
+  const bar = annotatorToolbar(annoCtrl); bar.id = 'annoBarInner';
+  $('annoBar').innerHTML = ''; $('annoBar').appendChild(bar); $('annoBar').classList.remove('hidden');
+}
+function exitAnnotate() { if (annoCtrl) { annoCtrl.destroy(); annoCtrl = null; } $('annoBar').classList.add('hidden'); $('annoBar').innerHTML = ''; }
+function refreshAnno() { if (annoMode) enterAnnotate(); }
 
 function isolationBadge() {
   const el = $('iso'); const ok = self.crossOriginIsolated === true;
@@ -139,6 +163,7 @@ function buildTimeline() {
     c.getContext('2d').drawImage(P.frames[bd.fi].thumb, 0, 0, boardW, BOARD_H);
     slot.appendChild(c);
     if (bd.pinned) { const pb = document.createElement('span'); pb.className = 'pinbadge'; pb.textContent = '📌'; slot.appendChild(pb); }
+    if (hasAnnos(P, bd.fi)) slot.classList.add('has-anno');
     attachTile(slot, c, bd.fi);
     inner.insertBefore(slot, ph);
     slotEls.set(bd.fi, slot);
@@ -247,6 +272,7 @@ function onTick(sec, playing) {
   if (r) {
     if (P.frames[r.frame]) $('preview').src = P.frames[r.frame].url;
     if (!playing) cur = r.frame;
+    if (annoMode && !playing && r.frame !== lastAnnoFrame) { lastAnnoFrame = r.frame; refreshAnno(); }
     if (r.shotIndex !== lastShot) { lastShot = r.shotIndex; if (!playing) updateInspector(); }
     $('previewMeta').textContent = `${P.frames[r.frame].name} · shot ${r.shotIndex + 1}/${P.shots.length}`;
   }
@@ -396,6 +422,19 @@ function wire() {
   $('mPreview').onclick = () => { $('exportMenu').classList.add('hidden'); openPreview(); };
   $('mJson').onclick = () => { $('exportMenu').classList.add('hidden'); exportBreakdownJSON(); toast('Breakdown JSON downloaded'); };
   $('mCopyGs').onclick = () => { $('exportMenu').classList.add('hidden'); copyGs(); };
+  $('annotateBtn').onclick = toggleAnnotate;
+  $('mMp4').onclick = async () => {
+    $('exportMenu').classList.add('hidden');
+    if (!self.crossOriginIsolated) { toast('mp4 needs the hosted (isolated) app'); return; }
+    const burn = P.annos.size ? confirm('Burn annotations into the mp4?\n\nOK = with annotations · Cancel = clean render') : false;
+    try { overlay('Preparing mp4…'); await exportMp4({ burnAnnotations: burn, onProgress: (m, p) => overlay(`${m} ${p ? Math.round(p * 100) + '%' : ''}`) }); toast('mp4 exported'); }
+    catch (e) { console.error(e); toast(e.message || 'mp4 export failed'); } finally { overlay(false); }
+  };
+  $('mViewer').onclick = async () => {
+    $('exportMenu').classList.add('hidden');
+    try { overlay('Building viewer…'); await exportViewer(); toast('Viewer JSON exported — open in view.html'); }
+    catch (e) { console.error(e); toast('Viewer export failed'); } finally { overlay(false); }
+  };
   $('autoBtn').onclick = () => { mutate(() => { const r = autoEstimate(P); toast(`Estimated ${r.filled} boards → ${fmtClock(r.total)}`); }); render(); };
   $('rebalBtn').onclick = () => { mutate(() => { const r = rebalance(P); toast(`Rebalanced → ${fmtClock(r.total)}`); }); render(); };
 
@@ -439,7 +478,7 @@ function wire() {
     if (typing || !P.frames.length) return;
     const k = e.key;
     if (k === ' ') { if (/button/i.test(e.target.tagName)) return; e.preventDefault(); transport.toggle(); return; }
-    if (k === 'Escape') { if (document.getElementById('activeModal')) { closeModal(); } else clearSelection(); return; }
+    if (k === 'Escape') { if (document.getElementById('activeModal')) { closeModal(); } else if (annoMode) { toggleAnnotate(); } else clearSelection(); return; }
     if (k === 'h' || k === 'H') { e.preventDefault(); toggleHide(cur); return; }
     if (k === 'p' || k === 'P') { e.preventDefault(); togglePin(cur); return; }
     if (k === '+' || k === '=') { e.preventDefault(); setZoom(1.6); return; }

@@ -4,6 +4,7 @@ import {
   getAsset, setAssetField, setAssetTaskVal, assetsByCat,
 } from '../core/model.js';
 import { mutate } from '../core/history.js';
+import { createAnnotator, annotatorToolbar, drawAnnos } from '../core/annotate.js';
 
 let refresh = () => {};
 export function setRefresh(fn) { refresh = fn; }
@@ -21,7 +22,17 @@ function shotMontage(sh, cols = 3, cell = 200) {
   return { url: cv.toDataURL('image/jpeg', 0.72), w: cv.width, h: cv.height };
 }
 
-export function buildBreakdownData(withThumbs = true) {
+function loadImg(src) { return new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; }); }
+async function assetThumbFor(a) {
+  if (!a.thumb) return null;
+  if (!a.annos || !a.annos.length) return a.thumb;
+  const im = await loadImg(a.thumb); if (!im) return a.thumb;
+  const cv = document.createElement('canvas'); cv.width = im.width; cv.height = im.height;
+  const ctx = cv.getContext('2d'); ctx.drawImage(im, 0, 0); drawAnnos(ctx, a.annos, cv.width, cv.height);
+  return cv.toDataURL('image/jpeg', 0.8);
+}
+
+export async function buildBreakdownData(withThumbs = true) {
   const shots = P.shots.map((sh, si) => {
     const m = shotMeta(P, sh);
     const mont = withThumbs ? shotMontage(sh) : null;
@@ -32,12 +43,15 @@ export function buildBreakdownData(withThumbs = true) {
       thumbnail: mont ? mont.url : null, thumbW: mont ? mont.w : 152, thumbH: mont ? mont.h : 88,
     };
   });
-  const assets = P.assets.map((a) => ({ name: a.name, cat: a.cat, tasks: a.tasks || {} }));
+  const assets = [];
+  for (const a of P.assets) {
+    assets.push({ name: a.name, cat: a.cat, tasks: a.tasks || {}, thumbnail: withThumbs ? await assetThumbFor(a) : null, thumbW: a.thumbW || 240, thumbH: a.thumbH || 135 });
+  }
   return { kind: 'breakdown', lenUnit: P.lenUnit, fps: P.fps, shotTasks: P.shotTasks, assetTasks: P.assetTasks, assetCats: P.assetCats, shots, assets };
 }
 
-export function exportBreakdownJSON() {
-  const data = buildBreakdownData(true);
+export async function exportBreakdownJSON() {
+  const data = await buildBreakdownData(true);
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = `${P.baseName}_breakdown.json`;
@@ -108,12 +122,13 @@ function assetRow(a, body) {
   const row = el('div', 'asset-row');
   // thumb
   const thumb = el('div', 'asset-thumb');
-  if (a.thumb) { const im = document.createElement('img'); im.src = a.thumb; thumb.appendChild(im); }
+  if (a.thumb) { const im = document.createElement('img'); im.src = a.thumb; thumb.appendChild(im); if (a.annos && a.annos.length) { const ov = document.createElement('canvas'); ov.className = 'asset-anno-ov'; thumb.appendChild(ov); const set = () => { const r = thumb.getBoundingClientRect(); ov.width = r.width; ov.height = r.height; drawAnnos(ov.getContext('2d'), a.annos, ov.width, ov.height); }; requestAnimationFrame(set); } }
   else thumb.textContent = '—';
   const thumbBtns = el('div', 'asset-thumb-btns');
   const pick = el('button', 'mini'); pick.textContent = 'board'; pick.title = 'pick a board as reference'; pick.onclick = () => pickBoard(a.id, body);
   const up = el('button', 'mini'); up.textContent = 'upload'; up.onclick = () => uploadThumb(a.id, body);
-  thumbBtns.append(pick, up);
+  const ann = el('button', 'mini'); ann.textContent = '✎'; ann.title = 'annotate reference'; ann.disabled = !a.thumb; ann.onclick = () => openAssetAnnotate(a.id, body);
+  thumbBtns.append(pick, up, ann);
   const thumbWrap = el('div', 'asset-thumb-wrap'); thumbWrap.append(thumb, thumbBtns);
   row.appendChild(thumbWrap);
 
@@ -151,7 +166,7 @@ function pickBoard(id, body) {
       c.onclick = () => {
         const cv = document.createElement('canvas'); cv.width = 240; cv.height = Math.round(240 * f.thumb.height / f.thumb.width);
         cv.getContext('2d').drawImage(f.thumb, 0, 0, cv.width, cv.height);
-        mutate(() => { setAssetField(P, id, 'thumb', cv.toDataURL('image/jpeg', 0.75)); setAssetField(P, id, 'thumbFrom', f.name); });
+        mutate(() => { setAssetField(P, id, 'thumb', cv.toDataURL('image/jpeg', 0.75)); setAssetField(P, id, 'thumbFrom', f.name); setAssetField(P, id, 'thumbW', cv.width); setAssetField(P, id, 'thumbH', cv.height); setAssetField(P, id, 'annos', []); });
         openAssetWindow();
       };
       grid.appendChild(c);
@@ -159,12 +174,26 @@ function pickBoard(id, body) {
     mb.appendChild(grid);
   }, true);
 }
+
+function openAssetAnnotate(id, body) {
+  const a = getAsset(P, id); if (!a || !a.thumb) return;
+  modal('Annotate reference — ' + (a.name || ''), (mb) => {
+    const host = el('div', 'anno-host'); host.style.position = 'relative';
+    const img = document.createElement('img'); img.className = 'anno-img'; img.src = a.thumb;
+    host.appendChild(img); mb.appendChild(host);
+    const barSlot = el('div', 'anno-bar-wrap'); mb.appendChild(barSlot);
+    img.onload = () => {
+      const ctrl = createAnnotator(host, img, a.annos || [], (strokes) => { mutate(() => setAssetField(P, id, 'annos', strokes)); });
+      barSlot.appendChild(annotatorToolbar(ctrl));
+    };
+  }, true);
+}
 function uploadThumb(id, body) {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
   inp.onchange = () => {
     const file = inp.files[0]; if (!file) return;
     const r = new FileReader();
-    r.onload = () => { const img = new Image(); img.onload = () => { const cv = document.createElement('canvas'); cv.width = 240; cv.height = Math.round(240 * img.height / img.width); cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); mutate(() => { setAssetField(P, id, 'thumb', cv.toDataURL('image/jpeg', 0.75)); setAssetField(P, id, 'thumbFrom', 'upload'); }); renderAssets(document.querySelector('#activeModal .modal-body')); }; img.src = r.result; };
+    r.onload = () => { const img = new Image(); img.onload = () => { const cv = document.createElement('canvas'); cv.width = 240; cv.height = Math.round(240 * img.height / img.width); cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); mutate(() => { setAssetField(P, id, 'thumb', cv.toDataURL('image/jpeg', 0.75)); setAssetField(P, id, 'thumbFrom', 'upload'); setAssetField(P, id, 'thumbW', cv.width); setAssetField(P, id, 'thumbH', cv.height); setAssetField(P, id, 'annos', []); }); renderAssets(document.querySelector('#activeModal .modal-body')); }; img.src = r.result; };
     r.readAsDataURL(file);
   };
   inp.click();
@@ -172,8 +201,10 @@ function uploadThumb(id, body) {
 
 // ---------- sheet preview ----------
 export function openPreview() {
-  modal('Sheet preview', (body) => {
-    const d = buildBreakdownData(true);
+  modal('Sheet preview', async (body) => {
+    body.innerHTML = '<div class="asset-empty">Building preview…</div>';
+    const d = await buildBreakdownData(true);
+    body.innerHTML = '';
     const wrapS = el('div', 'sheet-block');
     wrapS.appendChild(tag('Shots', 'sheet-title'));
     wrapS.appendChild(shotTable(d));
@@ -206,10 +237,11 @@ function shotTable(d) {
 }
 function assetTable(d) {
   const t = document.createElement('table'); t.className = 'sheet';
-  t.appendChild(tr(['Category', 'Asset', ...d.assetTasks.map(cap)].map((h) => th(h))));
+  t.appendChild(tr(['Category', 'Reference', 'Asset', ...d.assetTasks.map(cap)].map((h) => th(h))));
   d.assetCats.forEach((cat) => {
     d.assets.filter((a) => a.cat === cat).forEach((a, i) => {
-      const cells = [td(i === 0 ? cap(cat) : ''), td(a.name)];
+      const ref = document.createElement('td'); if (a.thumbnail) { const im = document.createElement('img'); im.src = a.thumbnail; im.className = 'sheet-thumb'; ref.appendChild(im); }
+      const cells = [td(i === 0 ? cap(cat) : ''), ref, td(a.name)];
       d.assetTasks.forEach((tk) => cells.push(td(a.tasks[tk] != null ? a.tasks[tk] : '')));
       t.appendChild(tr(cells));
     });
