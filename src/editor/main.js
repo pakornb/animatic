@@ -9,6 +9,7 @@ import { loadAudioFile, drawWaveform } from '../io/audio.js';
 import { renderInspector } from './inspector.js';
 import { Transport } from './transport.js';
 import { mutate, undo, redo, clearHistory, canUndo, canRedo, beginGesture, commitGesture } from '../core/history.js';
+import { APPS_SCRIPT } from '../io/appsScript.js';
 
 const $ = (id) => document.getElementById(id);
 let cur = 0, lastShot = -1, pps = null;
@@ -16,6 +17,7 @@ const BOARD_H = 60, RULER_H = 24, SEC_PER_PX = 0.012;
 const transport = new Transport(P);
 const slotEls = new Map();
 let selected = new Set();
+let selAnchor = null;
 let resAspect = 16 / 9;
 let lastCurX = null;
 
@@ -182,8 +184,19 @@ function drawRuler() {
 }
 
 // ---------- selection ----------
-function selectSingle(fi) { selected = new Set([fi]); cur = fi; transport.seek(boardStartSec(fi)); render(); }
-function toggleSel(fi) { if (selected.has(fi)) selected.delete(fi); else selected.add(fi); cur = fi; render(); }
+function selectSingle(fi) { selected = new Set([fi]); selAnchor = fi; cur = fi; transport.seek(boardStartSec(fi)); render(); }
+function toggleSel(fi) { if (selected.has(fi)) selected.delete(fi); else selected.add(fi); selAnchor = fi; cur = fi; render(); }
+function selectExtend(dir) {
+  const flat = enabledFlat(P); let i = flat.indexOf(cur); if (i < 0) i = 0;
+  if (selAnchor == null) selAnchor = cur;
+  const ni = Math.max(0, Math.min(flat.length - 1, i + dir));
+  cur = flat[ni];
+  const a = flat.indexOf(selAnchor), b = ni, lo = Math.min(a, b), hi = Math.max(a, b);
+  selected = new Set(); for (let j = lo; j <= hi; j++) selected.add(flat[j]);
+  transport.seek(boardStartSec(cur)); render();
+}
+function toggleHide(fi) { mutate(() => { const n = P.frames[fi].name; if (P.boardDisabled.has(n)) P.boardDisabled.delete(n); else P.boardDisabled.add(n); }); render(); }
+function togglePin(fi) { mutate(() => { const n = P.frames[fi].name; if (P.pinned.has(n)) P.pinned.delete(n); else P.pinned.add(n); }); render(); }
 
 // ---------- tile gestures (axis-locked) ----------
 function attachTile(slot, imgCanvas, fi) {
@@ -247,13 +260,14 @@ function updatePlayhead(sec) {
 function keepVisible(sec) { const sc = $('timeline'), x = sec * pps; if (x < sc.scrollLeft + 40 || x > sc.scrollLeft + sc.clientWidth - 40) sc.scrollLeft = x - sc.clientWidth * 0.3; }
 
 // ---------- zoom ----------
-function setZoom(mult) {
+function setZoom(mult, clientX) {
   const sc = $('timeline'); const rect = sc.getBoundingClientRect();
-  const cx = (lastCurX != null ? lastCurX - rect.left : sc.clientWidth / 2);
-  const centerSec = (sc.scrollLeft + cx) / pps;
+  let anchorSec, screenX;
+  if (clientX != null) { screenX = clientX - rect.left; anchorSec = (sc.scrollLeft + screenX) / pps; }
+  else { anchorSec = transport.sec; screenX = sc.clientWidth / 2; } // buttons → toward playhead
   pps = Math.max(2, Math.min(6000, pps * mult));
   buildTimeline(); updatePlayhead(transport.sec);
-  sc.scrollLeft = centerSec * pps - cx;
+  sc.scrollLeft = anchorSec * pps - screenX;
 }
 function zoomFit() { pps = fitPps(); buildTimeline(); updatePlayhead(transport.sec); $('timeline').scrollLeft = 0; }
 
@@ -368,6 +382,10 @@ function wire() {
   $('falloff').oninput = (e) => { P.falloffReach = +e.target.value; $('falloffVal').textContent = e.target.value; };
   $('falloffCurve').onchange = (e) => { P.falloffCurve = e.target.value; drawCurvePreview(); };
   $('clearSelBtn').onclick = clearSelection;
+  $('copyGsBtn').onclick = async () => {
+    try { await navigator.clipboard.writeText(APPS_SCRIPT); toast('Apps Script copied — paste into Sheets → Extensions → Apps Script'); }
+    catch { const ta = document.createElement('textarea'); ta.value = APPS_SCRIPT; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Apps Script copied'); }
+  };
   $('autoBtn').onclick = () => { mutate(() => { const r = autoEstimate(P); toast(`Estimated ${r.filled} boards → ${fmtClock(r.total)}`); }); render(); };
   $('rebalBtn').onclick = () => { mutate(() => { const r = rebalance(P); toast(`Rebalanced → ${fmtClock(r.total)}`); }); render(); };
 
@@ -386,7 +404,7 @@ function wire() {
 
   $('timeline').addEventListener('pointermove', (e) => { lastCurX = e.clientX; });
   $('timeline').addEventListener('pointerleave', () => { lastCurX = null; });
-  $('timeline').addEventListener('wheel', (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); lastCurX = e.clientX; setZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15); } }, { passive: false });
+  $('timeline').addEventListener('wheel', (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX); } }, { passive: false });
 
   $('loadAudioBtn').onclick = () => $('audioInput').click();
   $('loadAudioBtn0').onclick = () => $('audioInput').click();
@@ -412,9 +430,12 @@ function wire() {
     const k = e.key;
     if (k === ' ') { if (/button/i.test(e.target.tagName)) return; e.preventDefault(); transport.toggle(); return; }
     if (k === 'Escape') { clearSelection(); return; }
+    if (k === 'h' || k === 'H') { e.preventDefault(); toggleHide(cur); return; }
+    if (k === 'p' || k === 'P') { e.preventDefault(); togglePin(cur); return; }
     if (k === 'ArrowRight' || k === 'ArrowLeft') {
       e.preventDefault(); const dir = k === 'ArrowRight' ? 1 : -1;
       if (e.metaKey || e.ctrlKey) transport.seek(dir > 0 ? timeline(P).total : 0);
+      else if (e.shiftKey) selectExtend(dir);
       else if (e.altKey) shotNav(dir);
       else boardNav(dir);
     } else if (k === 'ArrowUp' || k === 'ArrowDown') {

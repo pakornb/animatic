@@ -44,7 +44,7 @@ main{flex:1;display:flex;flex-direction:column;min-height:0}
 .slot.dragging{z-index:6;box-shadow:0 0 0 2px var(--head)}
 .slot.pinned{border-color:var(--good)}
 .slot .pinbadge{position:absolute;top:13px;right:2px;font-size:10px;filter:drop-shadow(0 0 1px #000);pointer-events:none}
-.mk{position:absolute;bottom:0;width:2px;height:14px;cursor:pointer;z-index:3}
+.mk{position:absolute;bottom:0;width:6px;height:14px;cursor:pointer;z-index:3;border-radius:1px}
 .mk.board{background:var(--faint)} .mk.shot{background:var(--cut);height:18px}
 .playhead{position:absolute;top:0;bottom:14px;width:2px;background:var(--head);z-index:5;box-shadow:0 0 4px var(--head)}
 .ph-grab{position:absolute;top:-1px;left:-6px;width:14px;height:24px;background:var(--head);border-radius:3px;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.5)}
