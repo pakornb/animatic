@@ -268,17 +268,27 @@ export function retimeBoard(p, fi, newDur, reach = p.falloffReach) {
   return delta;
 }
 
-// Scale a whole selection's durations by `factor`; neighbors absorb the net change.
+// Scale a whole selection's durations by `factor`; neighbors absorb the net change
+// with falloff from the selection edges. Pinned boards are never modified, and when
+// the region is pin-bounded the growth is capped to available slack (no drift), so
+// pinned boards keep their position.
 export function retimeGroup(p, fiList, factor, reach = p.falloffReach) {
   const flat = enabledFlat(p);
   const positions = fiList.map((fi) => flat.indexOf(fi)).filter((i) => i >= 0);
   if (!positions.length) return;
-  const { lo, hi } = regionAround(p, flat, positions);
+  const { lo, hi, leftPin, rightPin } = regionAround(p, flat, positions);
   const sel = new Set(fiList);
   const others = [];
-  for (let i = lo; i <= hi; i++) if (!sel.has(flat[i])) others.push(flat[i]);
-  let net = 0;
-  fiList.forEach((fi) => { const cur = boardDur(p, fi); const nd = Math.max(1 / (p.fps * 4), cur * factor); net += nd - cur; setBoardDur(p, fi, nd); });
+  for (let i = lo; i <= hi; i++) if (!sel.has(flat[i]) && !isPinned(p, flat[i])) others.push(flat[i]);
+  const minD = 1 / (p.fps * 4);
+  const olds = fiList.map((fi) => boardDur(p, fi));
+  const targets = olds.map((d) => Math.max(minD, d * factor));
+  let net = targets.reduce((s, t, i) => s + (t - olds[i]), 0);
+  if (net > 0 && (leftPin || rightPin)) {         // pin-bounded → cap, no drift
+    const slack = slackOf(p, others);
+    if (net > slack) { const scale = slack / net; fiList.forEach((fi, i) => setBoardDur(p, fi, olds[i] + (targets[i] - olds[i]) * scale)); net = slack; }
+    else fiList.forEach((fi, i) => setBoardDur(p, fi, targets[i]));
+  } else fiList.forEach((fi, i) => setBoardDur(p, fi, targets[i]));
   const minP = Math.min(...positions), maxP = Math.max(...positions);
   if (others.length) redistribute(p, others, net, minP, maxP, flat, reach);
   return net;
@@ -313,7 +323,7 @@ export function offsetGroup(p, fiList, d, reach = p.falloffReach) {
   const { lo, hi } = regionAround(p, flat, positions);
   const sel = new Set(fiList);
   const before = [], after = [];
-  for (let i = lo; i <= hi; i++) { if (sel.has(flat[i])) continue; if (i < minP) before.push(flat[i]); else if (i > maxP) after.push(flat[i]); }
+  for (let i = lo; i <= hi; i++) { if (sel.has(flat[i]) || isPinned(p, flat[i])) continue; if (i < minP) before.push(flat[i]); else if (i > maxP) after.push(flat[i]); }
   if (d > 0) { const s = slackOf(p, after); if (d > s) d = s; if (!before.length) d = 0; }
   else { const s = slackOf(p, before); if (-d > s) d = -s; if (!after.length) d = 0; }
   if (Math.abs(d) < 1e-6) return 0;
