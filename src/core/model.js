@@ -112,6 +112,19 @@ export function computeShots(p = project) {
 }
 
 export function shotId(p, sh) { return sh.name || p.frames[sh.start].name; }
+
+// ---- manual shot boundaries (force a cut / merge into previous / reset to auto) ----
+export function isShotStart(p, fi) { return p.shots.some((s) => s.start === fi); }
+export function boundaryState(p, fi) {
+  const n = p.frames[fi].name;
+  if (p.manualAdd.has(n)) return 'forced';
+  if (p.manualRemove.has(n)) return 'removed';
+  return 'auto';
+}
+export function forceCut(p, fi) { if (fi <= 0) return; const n = p.frames[fi].name; p.manualRemove.delete(n); p.manualAdd.add(n); computeShots(p); }
+export function mergeUp(p, fi) { if (fi <= 0) return; const n = p.frames[fi].name; p.manualAdd.delete(n); p.manualRemove.add(n); computeShots(p); }
+export function resetBoundary(p, fi) { const n = p.frames[fi].name; p.manualAdd.delete(n); p.manualRemove.delete(n); computeShots(p); }
+
 export function isShotDisabled(p, sh) { return p.shotDisabled.has(shotId(p, sh)); }
 export function isBoardDisabled(p, fi) { return p.boardDisabled.has(p.frames[fi].name); }
 export function isPinned(p, fi) { return p.pinned.has(p.frames[fi].name); }

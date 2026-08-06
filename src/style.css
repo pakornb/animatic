@@ -42,8 +42,9 @@ main{flex:1;display:flex;flex-direction:column;min-height:0}
 .slot.active{border-color:var(--cut);box-shadow:0 0 0 1px var(--cut);z-index:2}
 .slot.selected{border-color:var(--head);box-shadow:0 0 0 1px var(--head)}
 .slot.dragging{z-index:6;box-shadow:0 0 0 2px var(--head)}
-.slot.pinned{border-color:var(--good)}
-.slot .pinbadge{position:absolute;top:13px;right:2px;font-size:10px;filter:drop-shadow(0 0 1px #000);pointer-events:none}
+.slot.pinned{border-color:var(--good);box-shadow:inset 0 0 0 1px var(--good)}
+.slot.pinned::after{content:'';position:absolute;inset:0;background:rgba(108,192,112,.16);pointer-events:none}
+.slot .pinbadge{position:absolute;top:14px;right:3px;font-size:15px;line-height:1;pointer-events:none;z-index:2;filter:drop-shadow(0 1px 2px #000)}
 .mk{position:absolute;bottom:0;width:6px;height:14px;cursor:pointer;z-index:3;border-radius:1px}
 .mk.board{background:var(--faint)} .mk.shot{background:var(--cut);height:18px}
 .playhead{position:absolute;top:0;bottom:14px;width:2px;background:var(--head);z-index:5;box-shadow:0 0 4px var(--head)}

@@ -1,7 +1,7 @@
 import {
   project as P, shotMeta, setShotMeta, shotLenSec, setShotLen, lenToUnit, unitToSec,
   isBoardDisabled, isShotDisabled, shotId, boardDur, setBoardDur, isPinned, enabledBoards,
-  addShotTask, removeShotTask,
+  addShotTask, removeShotTask, isShotStart, boundaryState, forceCut, mergeUp, resetBoundary,
 } from '../core/model.js';
 import { mutate, beginGesture, commitGesture } from '../core/history.js';
 
@@ -42,6 +42,10 @@ export function renderInspector(container, frameIndex, cb) {
       onStructural();
     }),
   );
+  if (si > 0) {
+    nav.appendChild(tog('merge ↑', '', () => { mutate(() => mergeUp(P, sh.start)); onStructural(); }));
+    if (boundaryState(P, sh.start) !== 'auto') nav.appendChild(tog('reset cut', '', () => { mutate(() => resetBoundary(P, sh.start)); onStructural(); }));
+  }
   container.appendChild(nav);
 
   const boards = el('div', 'insp-boards');
@@ -65,6 +69,11 @@ export function renderInspector(container, frameIndex, cb) {
       mutate(() => { if (pin) P.pinned.delete(P.frames[f].name); else P.pinned.add(P.frames[f].name); });
       onStructural();
     }, pin));
+    if (f > sh.start) {
+      row.appendChild(mini('✂', 'cut here — start a new shot at this board', () => { mutate(() => forceCut(P, f)); onGoFrame(f); onStructural(); }));
+    } else if (f > 0 && boundaryState(P, f) === 'forced') {
+      row.appendChild(mini('↺', 'reset this manual cut', () => { mutate(() => resetBoundary(P, f)); onStructural(); }));
+    }
     if (!off) {
       const d = document.createElement('input');
       d.type = 'number'; d.min = '0'; d.step = P.lenUnit === 'frames' ? '1' : '0.05'; d.className = 'wt';
