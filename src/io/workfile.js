@@ -31,7 +31,7 @@ export async function saveWorkFile(onProgress) {
     fps: P.fps, threshold: P.threshold, groupMode: P.groupMode,
     hasNamePattern: P.hasNamePattern, lenUnit: P.lenUnit, spotSeconds: P.spotSeconds,
     falloffReach: P.falloffReach, falloffCurve: P.falloffCurve,
-    stages: P.stages,
+    shotTasks: P.shotTasks, assetTasks: P.assetTasks, assetCats: P.assetCats, assets: P.assets,
     frameKeys: P.frameKeys,
     diffs: P.diffs.map((d) => Math.round(d * 100) / 100),
     manualAdd: [...P.manualAdd], manualRemove: [...P.manualRemove],
@@ -66,7 +66,10 @@ export async function openWorkFile(file, onProgress) {
   P.spotSeconds = doc.spotSeconds || 30;
   P.falloffReach = doc.falloffReach || 3;
   P.falloffCurve = doc.falloffCurve || 'smooth';
-  P.stages = doc.stages || ['previs', 'anim', 'light', 'comp'];
+  P.shotTasks = doc.shotTasks || doc.stages || ['previs', 'anim', 'light', 'comp'];
+  P.assetTasks = doc.assetTasks || ['model', 'lookdev', 'rig'];
+  P.assetCats = doc.assetCats || ['character', 'set', 'prop'];
+  P.assets = doc.assets || [];
   P.frameKeys = doc.frameKeys || [];
   P.diffs = doc.diffs || [];
   P.manualAdd = new Set(doc.manualAdd || []);

@@ -10,6 +10,7 @@ import { renderInspector } from './inspector.js';
 import { Transport } from './transport.js';
 import { mutate, undo, redo, clearHistory, canUndo, canRedo, beginGesture, commitGesture } from '../core/history.js';
 import { APPS_SCRIPT } from '../io/appsScript.js';
+import { openAssetWindow, openPreview, exportBreakdownJSON, setRefresh, closeModal } from './assets.js';
 
 const $ = (id) => document.getElementById(id);
 let cur = 0, lastShot = -1, pps = null;
@@ -65,6 +66,8 @@ function onLoaded() {
   gm.options[1].disabled = !P.hasNamePattern;
   gm.options[1].textContent = P.hasNamePattern ? 'filename' : 'filename (none)';
   $('saveBtn').disabled = false;
+  $('assetsBtn').disabled = false;
+  $('exportBtn').disabled = false;
   transport.mountAudio(); syncAudioUI(); render(); updateCanvasGuide();
 }
 
@@ -382,10 +385,17 @@ function wire() {
   $('falloff').oninput = (e) => { P.falloffReach = +e.target.value; $('falloffVal').textContent = e.target.value; };
   $('falloffCurve').onchange = (e) => { P.falloffCurve = e.target.value; drawCurvePreview(); };
   $('clearSelBtn').onclick = clearSelection;
-  $('copyGsBtn').onclick = async () => {
+  setRefresh(render);
+  const copyGs = async () => {
     try { await navigator.clipboard.writeText(APPS_SCRIPT); toast('Apps Script copied — paste into Sheets → Extensions → Apps Script'); }
     catch { const ta = document.createElement('textarea'); ta.value = APPS_SCRIPT; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Apps Script copied'); }
   };
+  $('assetsBtn').onclick = () => openAssetWindow();
+  $('exportBtn').onclick = (e) => { e.stopPropagation(); $('exportMenu').classList.toggle('hidden'); };
+  document.addEventListener('click', (e) => { if (!e.target.closest('#exportBtn, #exportMenu')) $('exportMenu').classList.add('hidden'); });
+  $('mPreview').onclick = () => { $('exportMenu').classList.add('hidden'); openPreview(); };
+  $('mJson').onclick = () => { $('exportMenu').classList.add('hidden'); exportBreakdownJSON(); toast('Breakdown JSON downloaded'); };
+  $('mCopyGs').onclick = () => { $('exportMenu').classList.add('hidden'); copyGs(); };
   $('autoBtn').onclick = () => { mutate(() => { const r = autoEstimate(P); toast(`Estimated ${r.filled} boards → ${fmtClock(r.total)}`); }); render(); };
   $('rebalBtn').onclick = () => { mutate(() => { const r = rebalance(P); toast(`Rebalanced → ${fmtClock(r.total)}`); }); render(); };
 
@@ -429,9 +439,11 @@ function wire() {
     if (typing || !P.frames.length) return;
     const k = e.key;
     if (k === ' ') { if (/button/i.test(e.target.tagName)) return; e.preventDefault(); transport.toggle(); return; }
-    if (k === 'Escape') { clearSelection(); return; }
+    if (k === 'Escape') { if (document.getElementById('activeModal')) { closeModal(); } else clearSelection(); return; }
     if (k === 'h' || k === 'H') { e.preventDefault(); toggleHide(cur); return; }
     if (k === 'p' || k === 'P') { e.preventDefault(); togglePin(cur); return; }
+    if (k === '+' || k === '=') { e.preventDefault(); setZoom(1.6); return; }
+    if (k === '-' || k === '_') { e.preventDefault(); setZoom(1 / 1.6); return; }
     if (k === 'ArrowRight' || k === 'ArrowLeft') {
       e.preventDefault(); const dir = k === 'ArrowRight' ? 1 : -1;
       if (e.metaKey || e.ctrlKey) transport.seek(dir > 0 ? timeline(P).total : 0);

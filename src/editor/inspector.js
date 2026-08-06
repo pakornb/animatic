@@ -1,6 +1,7 @@
 import {
   project as P, shotMeta, setShotMeta, shotLenSec, setShotLen, lenToUnit, unitToSec,
   isBoardDisabled, isShotDisabled, shotId, boardDur, setBoardDur, isPinned, enabledBoards,
+  addShotTask, removeShotTask,
 } from '../core/model.js';
 import { mutate, beginGesture, commitGesture } from '../core/history.js';
 
@@ -100,23 +101,33 @@ export function renderInspector(container, frameIndex, cb) {
   lenWrap.append(len, unit);
   fields.appendChild(field('Shot length (total)', lenWrap));
 
+  const taskHead = el('div', 'field-label');
+  taskHead.innerHTML = 'Tasks <button class="mini addtask" id="addShotTask" title="add a global shot task">+ task</button>';
   const stageWrap = el('div', 'insp-stages');
-  P.stages.forEach((s) => {
+  P.shotTasks.forEach((s) => {
     const cell = el('div', 'stage-cell');
     const lab = el('label', ''); lab.textContent = s;
+    lab.title = 'double-click to remove this task column';
+    lab.addEventListener('dblclick', () => { if (confirm(`Remove shot task "${s}" everywhere?`)) { mutate(() => removeShotTask(P, s)); onStructural(); } });
     const inp = document.createElement('input'); inp.type = 'number'; inp.min = '0';
-    inp.value = (m.stageVals && m.stageVals[s] != null) ? m.stageVals[s] : '';
+    const tv = m.taskVals || m.stageVals || {};
+    inp.value = (tv && tv[s] != null) ? tv[s] : '';
     inp.addEventListener('focus', beginGesture);
     inp.addEventListener('input', () => {
-      const mm = shotMeta(P, sh); const sv = { ...(mm.stageVals || {}) };
+      const mm = shotMeta(P, sh); const sv = { ...(mm.taskVals || mm.stageVals || {}) };
       sv[s] = inp.value === '' ? null : +inp.value;
-      setShotMeta(P, sh, 'stageVals', sv); onChange();
+      setShotMeta(P, sh, 'taskVals', sv); onChange();
     });
     inp.addEventListener('blur', commitGesture);
     cell.append(lab, inp);
     stageWrap.appendChild(cell);
   });
-  fields.appendChild(field('Stages', stageWrap));
+  const taskField = el('div', 'field'); taskField.append(taskHead, stageWrap);
+  taskField.querySelector('#addShotTask').addEventListener('click', () => {
+    const name = prompt('New shot task name (e.g. layout, fx):'); if (!name) return;
+    mutate(() => addShotTask(P, name)); onStructural();
+  });
+  fields.appendChild(taskField);
 
   const note = document.createElement('textarea');
   note.value = m.note || ''; note.placeholder = 'notes…'; note.rows = 3;

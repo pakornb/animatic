@@ -20,7 +20,10 @@ export const project = {
   pinned: new Set(),      // filenames whose duration is locked (walls for retime)
   falloffReach: 3,        // base falloff reach in boards (global; Shift doubles it)
   falloffCurve: 'smooth', // 'linear' | 'easeIn' | 'easeOut' | 'smooth'
-  stages: ['previs', 'anim', 'light', 'comp'],
+  shotTasks: ['previs', 'anim', 'light', 'comp'], // global shot task columns
+  assetTasks: ['model', 'lookdev', 'rig'],        // global asset task columns
+  assetCats: ['character', 'set', 'prop'],        // asset categories
+  assets: [],             // [{ id, name, cat, tasks:{}, thumb:dataURL|null, thumbFrom:filename|null }]
   baseName: 'sequence',   // derived from first file / zip name
   resW: 1920, resH: 1080, // spot resolution (largest source image by default)
   source: null,           // 'files' | 'zip' | 'workfile'
@@ -363,11 +366,35 @@ export function resolveAt(p, sec) {
   return { frame: b.fi, shotIndex: b.shotIndex, startSec: b.startSec, len: b.len, total };
 }
 
-// ---- undo/redo snapshot of light state (never the image blobs) ----
+// ---- tasks (two global lists: shot + asset) ----
+function addTask(list, name) { const t = String(name || '').trim().toLowerCase(); if (t && !list.includes(t)) list.push(t); return t; }
+export function addShotTask(p, name) { return addTask(p.shotTasks, name); }
+export function removeShotTask(p, name) { p.shotTasks = p.shotTasks.filter((t) => t !== name); }
+export function addAssetTask(p, name) { return addTask(p.assetTasks, name); }
+export function removeAssetTask(p, name) { p.assetTasks = p.assetTasks.filter((t) => t !== name); p.assets.forEach((a) => { if (a.tasks) delete a.tasks[name]; }); }
+
+// ---- assets ----
+let assetSeq = 1;
+export function addAssetCat(p, name) { const c = String(name || '').trim(); if (c && !p.assetCats.includes(c)) p.assetCats.push(c); return c; }
+export function removeAssetCat(p, name) { p.assetCats = p.assetCats.filter((c) => c !== name); p.assets = p.assets.filter((a) => a.cat !== name); }
+export function addAsset(p, cat, name = 'new asset') {
+  const id = 'a' + (assetSeq++) + '_' + Date.now().toString(36);
+  p.assets.push({ id, name, cat, tasks: {}, thumb: null, thumbFrom: null });
+  return id;
+}
+export function removeAsset(p, id) { p.assets = p.assets.filter((a) => a.id !== id); }
+export function getAsset(p, id) { return p.assets.find((a) => a.id === id); }
+export function setAssetField(p, id, key, val) { const a = getAsset(p, id); if (a) a[key] = val; }
+export function setAssetTaskVal(p, id, task, val) { const a = getAsset(p, id); if (a) { a.tasks = a.tasks || {}; if (val === '' || val == null) delete a.tasks[task]; else a.tasks[task] = val; } }
+export function assetsByCat(p, cat) { return p.assets.filter((a) => a.cat === cat); }
+
+
 export function captureState(p = project) {
   return JSON.stringify({
     groupMode: p.groupMode, threshold: p.threshold, fps: p.fps,
-    lenUnit: p.lenUnit, spotSeconds: p.spotSeconds, stages: p.stages,
+    lenUnit: p.lenUnit, spotSeconds: p.spotSeconds,
+    shotTasks: p.shotTasks, assetTasks: p.assetTasks, assetCats: p.assetCats,
+    assets: p.assets.map((a) => ({ ...a, thumb: null })), // thumbs restored by id on apply
     manualAdd: [...p.manualAdd], manualRemove: [...p.manualRemove],
     meta: [...p.meta.entries()],
     boardDur: [...p.boardDur.entries()],
@@ -379,7 +406,9 @@ export function captureState(p = project) {
 export function applyState(p, snap) {
   const s = JSON.parse(snap);
   p.groupMode = s.groupMode; p.threshold = s.threshold; p.fps = s.fps;
-  p.lenUnit = s.lenUnit; p.spotSeconds = s.spotSeconds; p.stages = s.stages || p.stages;
+  p.lenUnit = s.lenUnit; p.spotSeconds = s.spotSeconds;
+  p.shotTasks = s.shotTasks || p.shotTasks; p.assetTasks = s.assetTasks || p.assetTasks; p.assetCats = s.assetCats || p.assetCats;
+  if (s.assets) { const thumbs = new Map(p.assets.map((a) => [a.id, a.thumb])); p.assets = s.assets.map((a) => ({ ...a, thumb: a.thumb || thumbs.get(a.id) || null })); }
   p.manualAdd = new Set(s.manualAdd); p.manualRemove = new Set(s.manualRemove);
   p.meta = new Map(s.meta);
   p.boardDur = new Map(s.boardDur || []);

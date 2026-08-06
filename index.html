@@ -30,7 +30,15 @@
     <span class="hspace"></span>
     <button class="btn ghost sm" id="openWorkBtn">Open</button>
     <button class="btn ghost sm" id="saveBtn" disabled>Save</button>
-    <button class="btn ghost sm" id="exportBtn" disabled title="mp4 / viewer / sheet export — added in the export step">Export ▾</button>
+    <button class="btn ghost sm" id="assetsBtn" disabled title="asset tracker">Assets</button>
+    <div class="menu-wrap">
+      <button class="btn ghost sm" id="exportBtn" disabled title="sheet preview / export">Export ▾</button>
+      <div class="menu hidden" id="exportMenu">
+        <button id="mPreview">Preview sheet…</button>
+        <button id="mJson">Download breakdown JSON</button>
+        <button id="mCopyGs">Copy Apps Script</button>
+      </div>
+    </div>
     <span class="sep"></span>
     <button class="tbtn sm" id="undoBtn" title="undo (Cmd/Ctrl+Z)" disabled>↶</button>
     <button class="tbtn sm" id="redoBtn" title="redo (Shift+Cmd/Ctrl+Z)" disabled>↷</button>
@@ -47,6 +55,7 @@
       <div><span>↑ / ↓</span> retime selected (+more / −less)</div>
       <div><span>Shift + ↑/↓ or drag</span> 2× falloff reach</div>
       <div><span>h</span> hide/show board · <span>p</span> pin toggle</div>
+      <div><span>+ / −</span> zoom in / out</div>
       <div><span>Cmd/Ctrl + Z</span> undo · <span>+Shift</span> redo</div>
       <hr />
       <div><span>drag tile ↕</span> retime · <span>↔</span> mushy-offset</div>
@@ -155,9 +164,6 @@
               <select id="lenUnit"><option value="sec">seconds</option><option value="frames">frames</option></select>
             </label>
           </div>
-          <div class="tp-row">
-            <button class="btn ghost sm" id="copyGsBtn" title="copy the Google Apps Script to paste into Sheets → Extensions → Apps Script">copy Apps Script</button>
-          </div>
         </div>
         <div class="insp-scroll" id="inspector"></div>
       </aside>
@@ -166,6 +172,7 @@
 
   <div class="overlay hidden" id="overlay"><div class="ov-card"><div class="spinner"></div><span>Working…</span></div></div>
   <div class="toast" id="toast"></div>
+  <div id="modalRoot"></div>
   <input type="file" id="fileInput" multiple accept="image/*" />
   <input type="file" id="zipInput" accept=".zip,application/zip" />
   <input type="file" id="workInput" accept=".json,application/json" />
