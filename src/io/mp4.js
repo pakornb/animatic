@@ -3,7 +3,7 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { project as P, timeline, getAnnos } from '../core/model.js';
 import { drawAnnos } from '../core/annotate.js';
 
-const CORE = 'https://unpkg.com/@ffmpeg/core-mt@0.12.10/dist/esm';
+const CORE = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
 let ff = null;
 
 async function ensureFF(log) {
@@ -13,7 +13,6 @@ async function ensureFF(log) {
   await ff.load({
     coreURL: await toBlobURL(`${CORE}/ffmpeg-core.js`, 'text/javascript'),
     wasmURL: await toBlobURL(`${CORE}/ffmpeg-core.wasm`, 'application/wasm'),
-    workerURL: await toBlobURL(`${CORE}/ffmpeg-core.worker.js`, 'text/javascript'),
   });
   return ff;
 }
@@ -36,7 +35,6 @@ async function renderFrame(fi, W, H, burn) {
 }
 
 export async function exportMp4({ burnAnnotations = false, onProgress = () => {} } = {}) {
-  if (!self.crossOriginIsolated) throw new Error('mp4 export needs the hosted (isolated) app — headers not active here.');
   const { boards, total } = timeline(P);
   if (!boards.length) throw new Error('Nothing to export.');
   const W = evenN(P.resW || 1920), H = evenN(P.resH || 1080), fps = P.fps || 24;

@@ -328,6 +328,7 @@ function drawSlipReadout() { const a = P.audio; if (!a) return; const fr = Math.
 function nudgeSlip(df) { const a = P.audio; if (!a) return; mutate(() => { a.offsetSec = (a.offsetSec || 0) + df / P.fps; }); drawSlipReadout(); layoutAudioClip(); transport.seek(transport.sec); refreshUndoButtons(); }
 function nudgeSlipSec(d) { const a = P.audio; if (!a) return; mutate(() => { a.offsetSec = (a.offsetSec || 0) + d; }); drawSlipReadout(); layoutAudioClip(); transport.seek(transport.sec); refreshUndoButtons(); }
 function setSyncToPlayhead() { const a = P.audio; if (!a) return; mutate(() => { a.offsetSec = transport.sec; }); drawSlipReadout(); layoutAudioClip(); transport.seek(transport.sec); refreshUndoButtons(); toast('Audio start set to playhead'); }
+function removeAudio() { if (!P.audio) return; if (P.audio.url && P.audio.url.startsWith('blob:')) { try { URL.revokeObjectURL(P.audio.url); } catch {} } P.audio = null; transport.mountAudio(); layoutAudioClip(); syncAudioUI(); toast('Audio removed'); }
 
 // ---------- utils ----------
 function overlay(msg) { const o = $('overlay'); if (msg === false) { o.classList.add('hidden'); return; } o.querySelector('span').textContent = msg; o.classList.remove('hidden'); }
@@ -445,7 +446,6 @@ function wire() {
   $('annotateBtn').onclick = toggleAnnotate;
   $('mMp4').onclick = async () => {
     $('exportMenu').classList.add('hidden');
-    if (!self.crossOriginIsolated) { toast('mp4 needs the hosted (isolated) app'); return; }
     const burn = P.annos.size ? confirm('Burn annotations into the mp4?\n\nOK = with annotations · Cancel = clean render') : false;
     try { overlay('Preparing mp4…'); await exportMp4({ burnAnnotations: burn, onProgress: (m, p) => overlay(`${m} ${p ? Math.round(p * 100) + '%' : ''}`) }); toast('mp4 exported'); }
     catch (e) { console.error(e); toast(e.message || 'mp4 export failed'); } finally { overlay(false); }
@@ -481,6 +481,7 @@ function wire() {
   $('slipMinus1').onclick = () => nudgeSlip(-1); $('slipPlus1').onclick = () => nudgeSlip(1);
   $('slipMinusS').onclick = () => nudgeSlipSec(-0.1); $('slipPlusS').onclick = () => nudgeSlipSec(0.1);
   $('setSync').onclick = setSyncToPlayhead;
+  $('removeAudio').onclick = removeAudio;
   $('useAudioLen').onclick = () => { if (P.audio?.duration) { mutate(() => { P.spotSeconds = Math.round(P.audio.duration * 100) / 100; }); $('spot').value = P.spotSeconds; render(); toast('Spot set to audio length'); } };
 
   ['dragenter', 'dragover'].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); const d = $('drop'); if (d) d.classList.add('hot'); }));

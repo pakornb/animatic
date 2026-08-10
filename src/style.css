@@ -242,3 +242,6 @@ table.sheet tr.dis{opacity:.5}
 .viewer-screen{flex:1;position:relative;display:flex;align-items:center;justify-content:center;background:#0a0b0d;min-height:0}
 .viewer-screen canvas{max-width:100%;max-height:100%;display:block}
 .viewer-screen .meta{position:absolute;left:10px;bottom:8px;font-family:var(--mono);font-size:11px;color:var(--muted);background:rgba(0,0,0,.5);padding:2px 6px;border-radius:3px}
+
+.btn.ghost.sm.danger{border-color:var(--cut);color:var(--cut)}
+.btn.ghost.sm.danger:hover{background:rgba(255,138,61,.12)}
