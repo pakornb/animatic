@@ -3,30 +3,17 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { project as P, timeline, getAnnos, getBoardFit, fitRect } from '../core/model.js';
 import { drawAnnos } from '../core/annotate.js';
 
-const MT = 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm';
 const ST = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
 let ff = null;
 
-async function ensureFF(onProgress) {
+async function ensureFF() {
   if (ff) return ff;
   const inst = new FFmpeg();
-  // try multithread first (fast) when isolated; fall back to single-thread
-  if (self.crossOriginIsolated) {
-    try {
-      await inst.load({
-        coreURL: await toBlobURL(`${MT}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${MT}/ffmpeg-core.wasm`, 'application/wasm'),
-        workerURL: await toBlobURL(`${MT}/ffmpeg-core.worker.js`, 'text/javascript'),
-      });
-      ff = inst; return ff;
-    } catch (e) { console.warn('mt core failed, falling back to single-thread', e); }
-  }
-  const inst2 = new FFmpeg();
-  await inst2.load({
+  await inst.load({
     coreURL: await toBlobURL(`${ST}/ffmpeg-core.js`, 'text/javascript'),
     wasmURL: await toBlobURL(`${ST}/ffmpeg-core.wasm`, 'application/wasm'),
   });
-  ff = inst2; return ff;
+  ff = inst; return ff;
 }
 
 function evenN(n) { n = Math.round(n); return n % 2 ? n + 1 : n; }
@@ -40,7 +27,7 @@ async function renderFrame(fi, W, H, burn) {
   const r = fitRect(getBoardFit(P, fi), bmp.width, bmp.height, W, H);
   ctx.drawImage(bmp, r.dx, r.dy, r.dw, r.dh);
   bmp.close && bmp.close();
-  if (burn) { const a = getAnnos(P, fi); if (a.length) drawAnnos(ctx, a, W, H); }
+  if (burn) { const a = getAnnos(P, fi); if (a.length) drawAnnos(ctx, a, { x: r.dx, y: r.dy, w: r.dw, h: r.dh }); }
   return await new Promise((res) => cv.toBlob((b) => res(b), 'image/jpeg', 0.9));
 }
 
@@ -53,7 +40,7 @@ export async function exportMp4({ burnAnnotations = false, maxW = 0, onProgress 
   const fps = P.fps || 24;
 
   onProgress('Loading encoder…', 0.02);
-  const f = await ensureFF(onProgress);
+  const f = await ensureFF();
 
   onProgress('Rendering frames…', 0.05);
   let list = 'ffconcat version 1.0\n';

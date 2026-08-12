@@ -43,7 +43,7 @@ async function assetExportThumb(a, W = 320) {
   const h = Math.round(W * img.naturalHeight / img.naturalWidth);
   const cv = document.createElement('canvas'); cv.width = W; cv.height = h;
   const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0, W, h);
-  if (a.annos && a.annos.length) drawAnnos(ctx, a.annos, W, h);
+  if (a.annos && a.annos.length) drawAnnos(ctx, a.annos, { x: 0, y: 0, w: W, h });
   revoke();
   return { url: cv.toDataURL('image/jpeg', 0.82), w: W, h };
 }
@@ -141,7 +141,7 @@ function assetRow(a, body) {
   const row = el('div', 'asset-row');
   // thumb
   const thumb = el('div', 'asset-thumb');
-  if (a.thumb) { const im = document.createElement('img'); im.src = a.thumb; thumb.appendChild(im); if (a.annos && a.annos.length) { const ov = document.createElement('canvas'); ov.className = 'asset-anno-ov'; thumb.appendChild(ov); const set = () => { const r = thumb.getBoundingClientRect(); ov.width = r.width; ov.height = r.height; drawAnnos(ov.getContext('2d'), a.annos, ov.width, ov.height); }; requestAnimationFrame(set); } }
+  if (a.thumb) { const im = document.createElement('img'); im.src = a.thumb; thumb.appendChild(im); if (a.annos && a.annos.length) { const ov = document.createElement('canvas'); ov.className = 'asset-anno-ov'; thumb.appendChild(ov); const set = () => { const r = thumb.getBoundingClientRect(); ov.width = r.width; ov.height = r.height; drawAnnos(ov.getContext("2d"), a.annos, { x: 0, y: 0, w: ov.width, h: ov.height }); }; requestAnimationFrame(set); } }
   else thumb.textContent = '—';
   const thumbBtns = el('div', 'asset-thumb-btns');
   const pick = el('button', 'mini'); pick.textContent = 'board'; pick.title = 'pick a board as reference'; pick.onclick = () => pickBoard(a.id, body);

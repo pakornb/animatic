@@ -40,7 +40,7 @@ function enterAnnotate() {
     mutate(() => setAnnos(P, cur, strokes));
     const el = slotEls.get(cur); if (el) el.classList.toggle('has-anno', strokes.length > 0);
     refreshUndoButtons();
-  });
+  }, { getImageRect: (cw, ch) => { const im = imgCache.get(cur); if (!im) return { x: 0, y: 0, w: cw, h: ch }; return fitRect(getBoardFit(P, cur), im.naturalWidth, im.naturalHeight, cw, ch); } });
   const bar = annotatorToolbar(annoCtrl); bar.id = 'annoBarInner';
   $('annoBar').innerHTML = ''; $('annoBar').appendChild(bar); $('annoBar').classList.remove('hidden');
 }
@@ -130,7 +130,7 @@ function updateInspector() {
   renderInspector($('inspector'), cur, {
     onChange: light, onStructural: render,
     onGoFrame: (i) => { selectSingle(i); },
-    refreshPreview: () => { if (previewFi >= 0) drawPreview(previewFi); },
+    refreshPreview: () => { if (previewFi >= 0) drawPreview(previewFi); refreshAnno(); },
   });
 }
 function refreshUndoButtons() { $('undoBtn').disabled = !canUndo(); $('redoBtn').disabled = !canRedo(); }
@@ -466,7 +466,7 @@ function wire() {
   $('autoBtn').onclick = () => { mutate(() => { const r = autoEstimate(P); toast(`Estimated ${r.filled} boards → ${fmtClock(r.total)}`); }); render(); };
   $('rebalBtn').onclick = () => { mutate(() => { const r = rebalance(P); toast(`Rebalanced → ${fmtClock(r.total)}`); }); render(); };
   $('cutBtn').onclick = toggleCut;
-  $('fitMode').onchange = (e) => { P.fitMode = e.target.value; if (previewFi >= 0) drawPreview(previewFi); toast('Fit: ' + e.target.value); };
+  $('fitMode').onchange = (e) => { P.fitMode = e.target.value; if (previewFi >= 0) drawPreview(previewFi); refreshAnno(); toast('Fit: ' + e.target.value); };
   const runMp4 = async (maxW) => {
     const burn = P.annos.size ? confirm('Burn annotations into the mp4?\n\nOK = with annotations · Cancel = clean render') : false;
     try { overlay('Preparing mp4…'); await exportMp4({ burnAnnotations: burn, maxW, onProgress: (m, p) => overlay(`${m} ${p ? Math.round(p * 100) + '%' : ''}`) }); toast('mp4 exported'); }

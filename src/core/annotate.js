@@ -14,15 +14,18 @@ export function contentRect(el) {
   return { x: (bw - w) / 2, y: (bh - h) / 2, w, h };
 }
 
-export function drawAnnos(ctx, strokes, W, H) {
+// strokes are normalized (0..1) relative to the IMAGE. `rect` is where the image
+// is drawn (in ctx px): {x,y,w,h} — may extend beyond the canvas (cover crop).
+export function drawAnnos(ctx, strokes, rect) {
   if (!strokes || !strokes.length) return;
+  const R = rect || { x: 0, y: 0, w: ctx.canvas.width, h: ctx.canvas.height };
   ctx.save();
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  const lw = Math.max(2, Math.round(W / 300));
+  const lw = Math.max(2, Math.round(R.w / 300));
+  const P = (p) => ({ x: R.x + p.x * R.w, y: R.y + p.y * R.h });
   strokes.forEach((s) => {
     ctx.strokeStyle = s.color || '#ff3b3b'; ctx.fillStyle = s.color || '#ff3b3b';
     ctx.lineWidth = lw;
-    const P = (p) => ({ x: p.x * W, y: p.y * H });
     if (s.type === 'free' && s.pts.length > 1) {
       ctx.beginPath(); const a = P(s.pts[0]); ctx.moveTo(a.x, a.y);
       for (let i = 1; i < s.pts.length; i++) { const b = P(s.pts[i]); ctx.lineTo(b.x, b.y); }
@@ -41,7 +44,7 @@ export function drawAnnos(ctx, strokes, W, H) {
       ctx.lineTo(b.x - hl * Math.cos(ang + 0.4), b.y - hl * Math.sin(ang + 0.4));
       ctx.closePath(); ctx.fill();
     } else if (s.type === 'text') {
-      const a = P(s.pts[0]); const fs = Math.max(12, Math.round(H / 22));
+      const a = P(s.pts[0]); const fs = Math.max(12, Math.round(R.h / 22));
       ctx.font = `600 ${fs}px sans-serif`; ctx.textBaseline = 'top';
       ctx.lineWidth = Math.max(3, lw); ctx.strokeStyle = 'rgba(0,0,0,.6)';
       ctx.strokeText(s.text || '', a.x, a.y); ctx.fillText(s.text || '', a.x, a.y);
@@ -52,12 +55,14 @@ export function drawAnnos(ctx, strokes, W, H) {
 
 // Attach an interactive annotator over `imageEl` inside `host` (position:relative).
 // strokes: initial array (mutated copy returned via onCommit). Returns controller.
-export function createAnnotator(host, imageEl, strokes, onCommit) {
+export function createAnnotator(host, imageEl, strokes, onCommit, opts = {}) {
   let cur = (strokes || []).slice();
-  let tool = 'arrow', color = ANNO_COLORS[0];
+  let tool = 'select', color = ANNO_COLORS[0];
+  const getImageRect = opts.getImageRect || null;
   const canvas = document.createElement('canvas');
   canvas.className = 'anno-canvas';
   host.appendChild(canvas);
+  let rect = { x: 0, y: 0, w: 1, h: 1 }; // image draw-rect in canvas px
 
   function place() {
     const r = contentRect(imageEl);
@@ -65,10 +70,12 @@ export function createAnnotator(host, imageEl, strokes, onCommit) {
     canvas.style.top = imageEl.offsetTop + r.y + 'px';
     canvas.width = Math.max(1, Math.round(r.w)); canvas.height = Math.max(1, Math.round(r.h));
     canvas.style.width = r.w + 'px'; canvas.style.height = r.h + 'px';
+    rect = getImageRect ? getImageRect(canvas.width, canvas.height) : { x: 0, y: 0, w: canvas.width, h: canvas.height };
     redraw();
   }
-  function redraw() { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); drawAnnos(ctx, cur, canvas.width, canvas.height); }
-  const norm = (e) => { const b = canvas.getBoundingClientRect(); return { x: (e.clientX - b.left) / b.width, y: (e.clientY - b.top) / b.height }; };
+  function redraw() { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); drawAnnos(ctx, cur, rect); drawSelection(); }
+  // pointer(px) → image-normalized (0..1 across the image)
+  const norm = (e) => { const b = canvas.getBoundingClientRect(); const px = (e.clientX - b.left) * (canvas.width / b.width); const py = (e.clientY - b.top) * (canvas.height / b.height); return { x: (px - rect.x) / rect.w, y: (py - rect.y) / rect.h }; };
 
   let drawing = null, selIdx = -1, mode = null, hIdx = -1, startPts = null, startPt = null;
 
@@ -121,7 +128,7 @@ export function createAnnotator(host, imageEl, strokes, onCommit) {
     }
     if (!drawing) return;
     if (drawing.type === 'free') drawing.pts.push(p); else drawing.pts[1] = p;
-    const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); drawAnnos(ctx, cur.concat([drawing]), canvas.width, canvas.height);
+    const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); drawAnnos(ctx, cur.concat([drawing]), rect);
   });
   canvas.addEventListener('pointerup', () => {
     if (tool === 'select') { if (mode) { mode = null; startPts = null; commit(); } return; }
@@ -142,15 +149,15 @@ export function createAnnotator(host, imageEl, strokes, onCommit) {
 
   function drawSelection() {
     if (tool !== 'select' || selIdx < 0 || !cur[selIdx]) return;
-    const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height, s = cur[selIdx], bb = bbox(s);
+    const ctx = canvas.getContext('2d'), s = cur[selIdx], bb = bbox(s);
+    const X = (x) => rect.x + x * rect.w, Y = (y) => rect.y + y * rect.h;
     ctx.save();
     ctx.strokeStyle = '#4ea8de'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
-    ctx.strokeRect(bb.x0 * W - 3, bb.y0 * H - 3, (bb.x1 - bb.x0) * W + 6, (bb.y1 - bb.y0) * H + 6);
+    ctx.strokeRect(X(bb.x0) - 3, Y(bb.y0) - 3, (bb.x1 - bb.x0) * rect.w + 6, (bb.y1 - bb.y0) * rect.h + 6);
     ctx.setLineDash([]);
-    if (s.type !== 'text' && s.type !== 'free') { [s.pts[0], s.pts[1]].forEach((q) => { ctx.fillStyle = '#4ea8de'; ctx.fillRect(q.x * W - 4, q.y * H - 4, 8, 8); }); }
+    if (s.type !== 'text' && s.type !== 'free') { [s.pts[0], s.pts[1]].forEach((q) => { ctx.fillStyle = '#4ea8de'; ctx.fillRect(X(q.x) - 4, Y(q.y) - 4, 8, 8); }); }
     ctx.restore();
   }
-  function redraw() { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); drawAnnos(ctx, cur, canvas.width, canvas.height); drawSelection(); }
 
   function commit() { redraw(); onCommitCb && onCommitCb(cur.slice()); }
   const ctrl = {

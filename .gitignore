@@ -3,3 +3,5 @@ dist
 .DS_Store
 *.local
 .vercel
+offline-info.zip
+*.zip # optional: ignore all zips, since you deploy from source

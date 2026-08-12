@@ -45,7 +45,7 @@ function drawAt(sec) {
   if (im) {
     const r = fitRect(b.fit || 'cover', im.width, im.height, W, H);
     ctx.drawImage(im, r.dx, r.dy, r.dw, r.dh);
-    if (showAnno && b.annos && b.annos.length) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); drawAnnos(ctx, b.annos, W, H); ctx.restore(); }
+    if (showAnno && b.annos && b.annos.length) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); drawAnnos(ctx, b.annos, { x: r.dx, y: r.dy, w: r.dw, h: r.dh }); ctx.restore(); }
   }
   $('vMeta').textContent = `${b.name} · shot ${b.shot + 1}`;
 }
