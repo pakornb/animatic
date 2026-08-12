@@ -19,6 +19,8 @@ export const project = {
   shotDisabled: new Set(),// shot ids (name key or start filename) that are cut
   pinned: new Set(),      // filenames whose duration is locked (walls for retime)
   annos: new Map(),       // filename -> array of annotation strokes (vector)
+  fitMode: 'cover',       // global default: 'cover' | 'contain' | 'width' | 'height'
+  boardFit: new Map(),    // filename -> fit override
   falloffReach: 3,        // base falloff reach in boards (global; Shift doubles it)
   falloffCurve: 'smooth', // 'linear' | 'easeIn' | 'easeOut' | 'smooth'
   shotTasks: ['previs', 'anim', 'light', 'comp'], // global shot task columns
@@ -132,6 +134,20 @@ export function isPinned(p, fi) { return p.pinned.has(p.frames[fi].name); }
 export function getAnnos(p, fi) { return p.annos.get(p.frames[fi].name) || []; }
 export function setAnnos(p, fi, strokes) { const n = p.frames[fi].name; if (strokes && strokes.length) p.annos.set(n, strokes); else p.annos.delete(n); }
 export function hasAnnos(p, fi) { const a = p.annos.get(p.frames[fi].name); return !!(a && a.length); }
+export function getBoardFit(p, fi) { return p.boardFit.get(p.frames[fi].name) || p.fitMode; }
+export function setBoardFit(p, fi, mode) { const n = p.frames[fi].name; if (!mode || mode === 'default') p.boardFit.delete(n); else p.boardFit.set(n, mode); }
+// draw params to place a source (iw×ih) into a W×H frame under a fit mode.
+// cover/width/height may overflow the frame (cropped); contain letterboxes.
+export function fitRect(mode, iw, ih, W, H) {
+  if (!iw || !ih) return { dx: 0, dy: 0, dw: W, dh: H };
+  let s;
+  if (mode === 'contain') s = Math.min(W / iw, H / ih);
+  else if (mode === 'width') s = W / iw;
+  else if (mode === 'height') s = H / ih;
+  else s = Math.max(W / iw, H / ih); // cover (default)
+  const dw = iw * s, dh = ih * s;
+  return { dx: (W - dw) / 2, dy: (H - dh) / 2, dw, dh };
+}
 
 export const MIN_DUR = () => 1 / 240; // absolute floor; practical min is ~1 frame
 
@@ -417,6 +433,7 @@ export function captureState(p = project) {
     boardDur: [...p.boardDur.entries()],
     boardDisabled: [...p.boardDisabled], shotDisabled: [...p.shotDisabled],
     pinned: [...p.pinned], annos: [...p.annos.entries()],
+    fitMode: p.fitMode, boardFit: [...p.boardFit.entries()],
     audio: p.audio ? { offsetSec: p.audio.offsetSec, inSec: p.audio.inSec, outSec: p.audio.outSec } : null,
   });
 }
@@ -433,6 +450,7 @@ export function applyState(p, snap) {
   p.shotDisabled = new Set(s.shotDisabled || []);
   p.pinned = new Set(s.pinned || []);
   p.annos = new Map(s.annos || []);
+  p.fitMode = s.fitMode || p.fitMode; p.boardFit = new Map(s.boardFit || []);
   if (p.audio && s.audio) { p.audio.offsetSec = s.audio.offsetSec; p.audio.inSec = s.audio.inSec; p.audio.outSec = s.audio.outSec; }
   computeShots(p);
 }

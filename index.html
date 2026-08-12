@@ -27,6 +27,14 @@
       <input type="number" id="resW" min="1" value="1920" style="width:60px" />×<input type="number" id="resH" min="1" value="1080" style="width:60px" />
       <label class="lock" title="lock aspect ratio"><input type="checkbox" id="resLock" checked /> 🔒</label>
     </div>
+    <div class="ctrl"><span>fit</span>
+      <select id="fitMode" title="how boards fill the canvas">
+        <option value="cover">cover (crop)</option>
+        <option value="contain">contain (bars)</option>
+        <option value="width">fit width</option>
+        <option value="height">fit height</option>
+      </select>
+    </div>
     <span class="hspace"></span>
     <button class="btn ghost sm" id="openWorkBtn">Open</button>
     <button class="btn ghost sm" id="saveBtn" disabled>Save</button>
@@ -34,7 +42,8 @@
     <div class="menu-wrap">
       <button class="btn ghost sm" id="exportBtn" disabled title="sheet preview / export">Export ▾</button>
       <div class="menu hidden" id="exportMenu">
-        <button id="mMp4">Export mp4…</button>
+        <button id="mMp4">Export mp4 — final…</button>
+        <button id="mMp4Draft">Export mp4 — draft (fast)…</button>
         <button id="mViewer">Export review viewer…</button>
         <div class="menu-sep"></div>
         <button id="mPreview">Preview sheet…</button>
@@ -57,7 +66,7 @@
       <div><span>Cmd/Ctrl + ← / →</span> start / end</div>
       <div><span>↑ / ↓</span> retime selected (+more / −less)</div>
       <div><span>Shift + ↑/↓ or drag</span> 2× falloff reach</div>
-      <div><span>h</span> hide/show board · <span>p</span> pin toggle</div>
+      <div><span>h</span> hide/show board · <span>p</span> pin · <span>c</span> cut/merge</div>
       <div><span>+ / −</span> zoom in / out</div>
       <div><span>Cmd/Ctrl + Z</span> undo · <span>+Shift</span> redo</div>
       <hr />
@@ -83,8 +92,7 @@
     <div class="hidden stage" id="stage">
       <div class="stage-main">
         <div class="preview" id="previewWrap">
-          <div class="canvas-guide" id="canvasGuide"></div>
-          <img id="preview" alt="" />
+          <canvas id="previewCanvas"></canvas>
           <div class="meta" id="previewMeta"></div>
         </div>
         <div class="anno-bar-wrap hidden" id="annoBar"></div>
@@ -118,6 +126,7 @@
               <span class="sep"></span>
               <button class="btn ghost sm" id="autoBtn" title="fill unpinned boards to hit the spot">auto</button>
               <button class="btn ghost sm" id="rebalBtn" title="scale unpinned boards to the spot">rebalance</button>
+              <button class="btn ghost sm" id="cutBtn" title="cut / merge at the current board (c)">✂ cut</button>
               <button class="btn ghost sm" id="loadAudioBtn0" title="load scratch VO / music">load audio</button>
             </span>
             <span class="tl-tools">

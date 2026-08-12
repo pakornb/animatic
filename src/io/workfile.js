@@ -40,6 +40,7 @@ export async function saveWorkFile(onProgress) {
     boardDisabled: [...P.boardDisabled],
     shotDisabled: [...P.shotDisabled],
     pinned: [...P.pinned], annos: [...P.annos.entries()],
+    fitMode: P.fitMode, boardFit: [...P.boardFit.entries()],
     audio,
     frames,
   };
@@ -80,6 +81,7 @@ export async function openWorkFile(file, onProgress) {
   P.shotDisabled = new Set(doc.shotDisabled || []);
   P.pinned = new Set(doc.pinned || []);
   P.annos = new Map(doc.annos || []);
+  P.fitMode = doc.fitMode || 'cover'; P.boardFit = new Map(doc.boardFit || []);
   P.source = 'workfile';
 
   P.audio = null;

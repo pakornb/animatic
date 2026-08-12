@@ -2,7 +2,8 @@ import '../style.css';
 import {
   project as P, computeShots, timeline, resolveAt, autoEstimate, rebalance,
   retimeBoard, retimeGroup, offsetBoard, offsetGroup, boardDur, setBoardDur, enabledFlat, falloffWeight,
-  getAnnos, setAnnos, hasAnnos, fmtClock,
+  getAnnos, setAnnos, hasAnnos, getBoardFit, setBoardFit, fitRect,
+  isShotStart, forceCut, mergeUp, fmtClock,
 } from '../core/model.js';
 import { createAnnotator, annotatorToolbar } from '../core/annotate.js';
 import { loadFromFiles, loadFromZip } from '../core/frames.js';
@@ -34,8 +35,8 @@ function toggleAnnotate() {
 }
 function enterAnnotate() {
   exitAnnotate();
-  const img = $('preview'); if (!img.naturalWidth) { img.onload = () => { if (annoMode) enterAnnotate(); }; return; }
-  annoCtrl = createAnnotator($('previewWrap'), img, getAnnos(P, cur), (strokes) => {
+  const cvEl = $('previewCanvas'); if (!cvEl || !cvEl.width) return;
+  annoCtrl = createAnnotator($('previewWrap'), cvEl, getAnnos(P, cur), (strokes) => {
     mutate(() => setAnnos(P, cur, strokes));
     const el = slotEls.get(cur); if (el) el.classList.toggle('has-anno', strokes.length > 0);
     refreshUndoButtons();
@@ -64,7 +65,7 @@ async function openWork(file) {
   catch (e) { console.error(e); toast(e.message || 'Could not open work file'); } finally { overlay(false); }
 }
 function afterLoad(auto) {
-  clearHistory(); pps = null; selected.clear();
+  clearHistory(); pps = null; selected.clear(); imgCache.clear(); previewFi = -1;
   if (auto && P.boardDur.size === 0) autoEstimate(P); // seed a rough fit-to-spot at start
   onLoaded();
 }
@@ -82,6 +83,7 @@ function onLoaded() {
   $('fps').value = P.fps; $('spot').value = P.spotSeconds; $('lenUnit').value = P.lenUnit;
   $('resW').value = P.resW; $('resH').value = P.resH; resAspect = P.resW / P.resH;
   $('resPreset').value = '';
+  $('fitMode').value = P.fitMode;
   $('falloff').value = P.falloffReach;
   $('falloffVal') && ($('falloffVal').textContent = P.falloffReach);
   $('falloffCurve').value = P.falloffCurve;
@@ -92,18 +94,26 @@ function onLoaded() {
   $('saveBtn').disabled = false;
   $('assetsBtn').disabled = false;
   $('exportBtn').disabled = false;
-  transport.mountAudio(); syncAudioUI(); render(); updateCanvasGuide();
+  transport.mountAudio(); syncAudioUI(); render(); layoutPreview();
 }
 
-function updateCanvasGuide() {
-  const g = $('canvasGuide'); if (!g) return;
-  const box = g.parentElement; const bw = box.clientWidth, bh = box.clientHeight;
-  if (!bw || !bh) return;
-  let w = bw, h = bw / resAspect;
-  if (h > bh) { h = bh; w = bh * resAspect; }
-  w *= 0.94; h *= 0.94;
-  g.style.width = Math.round(w) + 'px'; g.style.height = Math.round(h) + 'px';
+const imgCache = new Map();
+function getImg(fi) { return new Promise((res) => { if (imgCache.has(fi)) return res(imgCache.get(fi)); const im = new Image(); im.onload = () => { imgCache.set(fi, im); res(im); }; im.onerror = () => res(null); im.src = P.frames[fi].url; }); }
+let previewFi = -1;
+function layoutPreviewSize() {
+  const cv = $('previewCanvas'); if (!cv) return; const box = cv.parentElement;
+  const bw = box.clientWidth, bh = box.clientHeight; if (!bw || !bh) return;
+  let w = bw, h = bw / resAspect; if (h > bh) { h = bh; w = bh * resAspect; }
+  w = Math.round(w * 0.96); h = Math.round(h * 0.96);
+  cv.width = w; cv.height = h; cv.style.width = w + 'px'; cv.style.height = h + 'px';
 }
+async function drawPreview(fi) {
+  previewFi = fi; const cv = $('previewCanvas'); if (!cv) return; if (!cv.width) layoutPreviewSize();
+  const im = await getImg(fi); if (previewFi !== fi) return;
+  const ctx = cv.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (im) { const r = fitRect(getBoardFit(P, fi), im.naturalWidth, im.naturalHeight, cv.width, cv.height); ctx.drawImage(im, r.dx, r.dy, r.dw, r.dh); }
+}
+function layoutPreview() { layoutPreviewSize(); if (previewFi >= 0) drawPreview(previewFi); refreshAnno(); }
 
 // ---------- render ----------
 function render() {
@@ -115,10 +125,12 @@ function render() {
   refreshUndoButtons();
 }
 function light() { drawRuler(); positionSlots(); updateBudget(); updatePlayhead(transport.sec); }
+function toggleCut() { mutate(() => { if (isShotStart(P, cur)) mergeUp(P, cur); else forceCut(P, cur); }); render(); }
 function updateInspector() {
   renderInspector($('inspector'), cur, {
     onChange: light, onStructural: render,
     onGoFrame: (i) => { selectSingle(i); },
+    refreshPreview: () => { if (previewFi >= 0) drawPreview(previewFi); },
   });
 }
 function refreshUndoButtons() { $('undoBtn').disabled = !canUndo(); $('redoBtn').disabled = !canRedo(); }
@@ -271,7 +283,7 @@ function onTick(sec, playing) {
   updatePlayhead(sec);
   const r = resolveAt(P, sec);
   if (r) {
-    if (P.frames[r.frame]) $('preview').src = P.frames[r.frame].url;
+    if (P.frames[r.frame] && r.frame !== previewFi) drawPreview(r.frame);
     if (!playing) cur = r.frame;
     if (annoMode && !playing && r.frame !== lastAnnoFrame) { lastAnnoFrame = r.frame; refreshAnno(); }
     if (r.shotIndex !== lastShot) { lastShot = r.shotIndex; if (!playing) updateInspector(); }
@@ -424,10 +436,10 @@ function wire() {
   $('fps').onchange = (e) => { mutate(() => { P.fps = Math.max(1, +e.target.value || 24); }); render(); };
   $('spot').onchange = (e) => { mutate(() => { P.spotSeconds = Math.max(1, +e.target.value || 30); }); render(); };
   $('lenUnit').onchange = (e) => { P.lenUnit = e.target.value; render(); };
-  $('resW').onchange = (e) => { P.resW = Math.max(1, +e.target.value || 1920); if ($('resLock').checked) { P.resH = Math.max(1, Math.round(P.resW / resAspect)); $('resH').value = P.resH; } else resAspect = P.resW / P.resH; updateCanvasGuide(); };
-  $('resH').onchange = (e) => { P.resH = Math.max(1, +e.target.value || 1080); if ($('resLock').checked) { P.resW = Math.max(1, Math.round(P.resH * resAspect)); $('resW').value = P.resW; } else resAspect = P.resW / P.resH; updateCanvasGuide(); };
+  $('resW').onchange = (e) => { P.resW = Math.max(1, +e.target.value || 1920); if ($('resLock').checked) { P.resH = Math.max(1, Math.round(P.resW / resAspect)); $('resH').value = P.resH; } else resAspect = P.resW / P.resH; layoutPreview(); };
+  $('resH').onchange = (e) => { P.resH = Math.max(1, +e.target.value || 1080); if ($('resLock').checked) { P.resW = Math.max(1, Math.round(P.resH * resAspect)); $('resW').value = P.resW; } else resAspect = P.resW / P.resH; layoutPreview(); };
   $('resLock').onchange = (e) => { if (e.target.checked) resAspect = P.resW / P.resH; };
-  $('resPreset').onchange = (e) => { const v = e.target.value; if (!v) return; const [w, h] = v.split('x').map(Number); P.resW = w; P.resH = h; resAspect = w / h; $('resW').value = w; $('resH').value = h; updateCanvasGuide(); };
+  $('resPreset').onchange = (e) => { const v = e.target.value; if (!v) return; const [w, h] = v.split('x').map(Number); P.resW = w; P.resH = h; resAspect = w / h; $('resW').value = w; $('resH').value = h; layoutPreview(); };
   $('groupMode').onchange = (e) => { mutate(() => { P.groupMode = e.target.value; }); selected.clear(); render(); };
   $('falloff').oninput = (e) => { P.falloffReach = +e.target.value; $('falloffVal').textContent = e.target.value; };
   $('falloffCurve').onchange = (e) => { P.falloffCurve = e.target.value; drawCurvePreview(); };
@@ -444,12 +456,8 @@ function wire() {
   $('mJson').onclick = () => { $('exportMenu').classList.add('hidden'); exportBreakdownJSON(); toast('Breakdown JSON downloaded'); };
   $('mCopyGs').onclick = () => { $('exportMenu').classList.add('hidden'); copyGs(); };
   $('annotateBtn').onclick = toggleAnnotate;
-  $('mMp4').onclick = async () => {
-    $('exportMenu').classList.add('hidden');
-    const burn = P.annos.size ? confirm('Burn annotations into the mp4?\n\nOK = with annotations · Cancel = clean render') : false;
-    try { overlay('Preparing mp4…'); await exportMp4({ burnAnnotations: burn, onProgress: (m, p) => overlay(`${m} ${p ? Math.round(p * 100) + '%' : ''}`) }); toast('mp4 exported'); }
-    catch (e) { console.error(e); toast(e.message || 'mp4 export failed'); } finally { overlay(false); }
-  };
+  $('mMp4').onclick = () => { $('exportMenu').classList.add('hidden'); runMp4(0); };
+  $('mMp4Draft').onclick = () => { $('exportMenu').classList.add('hidden'); runMp4(960); };
   $('mViewer').onclick = async () => {
     $('exportMenu').classList.add('hidden');
     try { overlay('Building viewer…'); await exportViewer(); toast('Viewer JSON exported — open in view.html'); }
@@ -457,6 +465,13 @@ function wire() {
   };
   $('autoBtn').onclick = () => { mutate(() => { const r = autoEstimate(P); toast(`Estimated ${r.filled} boards → ${fmtClock(r.total)}`); }); render(); };
   $('rebalBtn').onclick = () => { mutate(() => { const r = rebalance(P); toast(`Rebalanced → ${fmtClock(r.total)}`); }); render(); };
+  $('cutBtn').onclick = toggleCut;
+  $('fitMode').onchange = (e) => { P.fitMode = e.target.value; if (previewFi >= 0) drawPreview(previewFi); toast('Fit: ' + e.target.value); };
+  const runMp4 = async (maxW) => {
+    const burn = P.annos.size ? confirm('Burn annotations into the mp4?\n\nOK = with annotations · Cancel = clean render') : false;
+    try { overlay('Preparing mp4…'); await exportMp4({ burnAnnotations: burn, maxW, onProgress: (m, p) => overlay(`${m} ${p ? Math.round(p * 100) + '%' : ''}`) }); toast('mp4 exported'); }
+    catch (e) { console.error(e); toast(e.message || 'mp4 export failed'); } finally { overlay(false); }
+  };
 
   $('undoBtn').onclick = doUndo; $('redoBtn').onclick = doRedo;
   $('helpBtn').onclick = () => $('helpPop').classList.toggle('hidden');
@@ -497,6 +512,7 @@ function wire() {
     if (k === 'Escape') { if (document.getElementById('activeModal')) { closeModal(); } else if (annoMode) { toggleAnnotate(); } else clearSelection(); return; }
     if (k === 'h' || k === 'H') { e.preventDefault(); toggleHide(cur); return; }
     if (k === 'p' || k === 'P') { e.preventDefault(); togglePin(cur); return; }
+    if (k === 'c' || k === 'C') { e.preventDefault(); toggleCut(); return; }
     if (k === '+' || k === '=') { e.preventDefault(); setZoom(1.6); return; }
     if (k === '-' || k === '_') { e.preventDefault(); setZoom(1 / 1.6); return; }
     if (k === 'ArrowRight' || k === 'ArrowLeft') {
@@ -510,7 +526,7 @@ function wire() {
     }
   });
 
-  window.addEventListener('resize', () => { if (P.frames.length) { buildTimeline(); updatePlayhead(transport.sec); layoutAudioClip(); updateCanvasGuide(); } });
+  window.addEventListener('resize', () => { if (P.frames.length) { buildTimeline(); updatePlayhead(transport.sec); layoutAudioClip(); layoutPreview(); } });
 }
 
 wire();

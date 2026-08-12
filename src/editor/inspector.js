@@ -2,11 +2,12 @@ import {
   project as P, shotMeta, setShotMeta, shotLenSec, setShotLen, lenToUnit, unitToSec,
   isBoardDisabled, isShotDisabled, shotId, boardDur, setBoardDur, isPinned, enabledBoards,
   addShotTask, removeShotTask, isShotStart, boundaryState, forceCut, mergeUp, resetBoundary,
+  getBoardFit, setBoardFit,
 } from '../core/model.js';
 import { mutate, beginGesture, commitGesture } from '../core/history.js';
 
 export function renderInspector(container, frameIndex, cb) {
-  const { onChange, onStructural, onGoFrame } = cb;
+  const { onChange, onStructural, onGoFrame, refreshPreview } = cb;
   container.innerHTML = '';
   if (!P.shots.length) return;
   const si = P.shots.findIndex((s) => frameIndex >= s.start && frameIndex <= s.end);
@@ -109,6 +110,12 @@ export function renderInspector(container, frameIndex, cb) {
   const unit = el('span', 'unit'); unit.textContent = P.lenUnit === 'frames' ? 'frames' : 'sec';
   lenWrap.append(len, unit);
   fields.appendChild(field('Shot length (total)', lenWrap));
+
+  const fitSel = document.createElement('select');
+  [['default', 'default (global)'], ['cover', 'cover (crop)'], ['contain', 'contain (bars)'], ['width', 'fit width'], ['height', 'fit height']].forEach(([v, lbl]) => { const o = document.createElement('option'); o.value = v; o.textContent = lbl; fitSel.appendChild(o); });
+  fitSel.value = P.boardFit.get(P.frames[frameIndex].name) || 'default';
+  fitSel.onchange = () => { mutate(() => setBoardFit(P, frameIndex, fitSel.value)); refreshPreview && refreshPreview(); };
+  fields.appendChild(field('Fit (this board)', fitSel));
 
   const taskHead = el('div', 'field-label');
   taskHead.innerHTML = 'Tasks <button class="mini addtask" id="addShotTask" title="add a global shot task">+ task</button>';

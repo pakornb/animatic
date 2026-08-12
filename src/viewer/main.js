@@ -26,13 +26,27 @@ async function load(data) {
 
 function boardAt(sec) { let i = 0; for (let k = 0; k < starts.length; k++) { if (starts[k] <= sec + 1e-6) i = k; else break; } return i; }
 
+function fitRect(mode, iw, ih, W, H) {
+  if (!iw || !ih) return { dx: 0, dy: 0, dw: W, dh: H };
+  let s;
+  if (mode === 'contain') s = Math.min(W / iw, H / ih);
+  else if (mode === 'width') s = W / iw;
+  else if (mode === 'height') s = H / ih;
+  else s = Math.max(W / iw, H / ih);
+  const dw = iw * s, dh = ih * s;
+  return { dx: (W - dw) / 2, dy: (H - dh) / 2, dw, dh };
+}
+
 function drawAt(sec) {
   const cv = $('screen'); const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
   const i = boardAt(sec); const b = V.boards[i]; const im = imgs[i];
-  if (im) { const s = Math.min(W / im.width, H / im.height); const w = im.width * s, h = im.height * s; ctx.drawImage(im, (W - w) / 2, (H - h) / 2, w, h);
-    if (showAnno && b.annos && b.annos.length) { ctx.save(); ctx.translate((W - w) / 2, (H - h) / 2); drawAnnos(ctx, b.annos, w, h); ctx.restore(); } }
+  if (im) {
+    const r = fitRect(b.fit || 'cover', im.width, im.height, W, H);
+    ctx.drawImage(im, r.dx, r.dy, r.dw, r.dh);
+    if (showAnno && b.annos && b.annos.length) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); drawAnnos(ctx, b.annos, W, H); ctx.restore(); }
+  }
   $('vMeta').textContent = `${b.name} · shot ${b.shot + 1}`;
 }
 

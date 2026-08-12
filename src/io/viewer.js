@@ -1,4 +1,4 @@
-import { project as P, timeline, getAnnos } from '../core/model.js';
+import { project as P, timeline, getAnnos, getBoardFit } from '../core/model.js';
 
 function thumbURL(fi) { const t = P.frames[fi].thumb; return t.toDataURL ? t.toDataURL('image/jpeg', 0.8) : null; }
 function blobToDataURL(blob) { return new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); }); }
@@ -7,7 +7,7 @@ export async function buildViewerData() {
   const { boards, total } = timeline(P);
   const list = boards.map((bd) => ({
     thumb: thumbURL(bd.fi), dur: bd.len, name: P.frames[bd.fi].name,
-    shot: bd.shotIndex, annos: getAnnos(P, bd.fi),
+    shot: bd.shotIndex, annos: getAnnos(P, bd.fi), fit: getBoardFit(P, bd.fi),
   }));
   let audio = null;
   if (P.audio && P.audio.blob) audio = { name: P.audio.name, offsetSec: P.audio.offsetSec || 0, dataURL: await blobToDataURL(P.audio.blob) };
