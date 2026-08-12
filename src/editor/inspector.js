@@ -2,7 +2,7 @@ import {
   project as P, shotMeta, setShotMeta, shotLenSec, setShotLen, lenToUnit, unitToSec,
   isBoardDisabled, isShotDisabled, shotId, boardDur, setBoardDur, isPinned, enabledBoards,
   addShotTask, removeShotTask, isShotStart, boundaryState, forceCut, mergeUp, resetBoundary,
-  getBoardFit, setBoardFit,
+  setBoardFit,
 } from '../core/model.js';
 import { mutate, beginGesture, commitGesture } from '../core/history.js';
 
@@ -17,155 +17,165 @@ export function renderInspector(container, frameIndex, cb) {
   const shotOff = isShotDisabled(P, sh);
   const enb = enabledBoards(P, sh);
   const shotPinned = enb.length > 0 && enb.every((fi) => isPinned(P, fi));
-  const multi = sh.count > 1;
+  const origName = sh.name || P.frames[sh.start].name;
 
+  // ---- header: title + read-only length + shot pin/disable ----
   const head = el('div', 'insp-head');
-  const label = m.tag || sh.name || `Shot ${si + 1}`;
-  head.innerHTML =
-    `<div class="insp-title">${escapeHtml(label)}` +
-    `${shotOff ? ' <span class="cut-tag">CUT</span>' : ''}${shotPinned ? ' <span class="pin-tag">PIN</span>' : ''}</div>` +
+  const titleWrap = el('div', 'insp-title-wrap');
+  const label = m.tag || origName;
+  titleWrap.innerHTML =
+    `<div class="insp-title">${escapeHtml(label)}${shotOff ? ' <span class="cut-tag">CUT</span>' : ''}${shotPinned ? ' <span class="pin-tag">PIN</span>' : ''}</div>` +
     `<div class="insp-sub">shot ${si + 1}/${P.shots.length} · ${sh.count} boards · ${shotLenSec(P, sh).toFixed(2)}s</div>`;
-  container.appendChild(head);
-
-  const nav = el('div', 'insp-nav');
-  nav.append(
-    btn('‹', () => si > 0 && onGoFrame(P.shots[si - 1].start), si === 0),
-    btn('›', () => si < P.shots.length - 1 && onGoFrame(P.shots[si + 1].start), si === P.shots.length - 1),
-    tog(shotOff ? 'enable shot' : 'disable shot', shotOff ? 'on' : 'off-btn', () => {
-      mutate(() => { if (shotOff) P.shotDisabled.delete(shotId(P, sh)); else P.shotDisabled.add(shotId(P, sh)); });
-      onStructural();
+  const shotBtns = el('div', 'insp-shotbtns');
+  shotBtns.append(
+    iconbtn(shotOff ? '⊘' : '👁', shotOff ? 'enable shot' : 'disable shot', shotOff ? 'danger' : '', () => {
+      mutate(() => { if (shotOff) P.shotDisabled.delete(shotId(P, sh)); else P.shotDisabled.add(shotId(P, sh)); }); onStructural();
     }),
-    tog(shotPinned ? 'unpin shot' : 'pin shot', shotPinned ? 'pinned' : '', () => {
-      mutate(() => {
-        if (shotPinned) enb.forEach((fi) => P.pinned.delete(P.frames[fi].name));
-        else enb.forEach((fi) => P.pinned.add(P.frames[fi].name));
-      });
-      onStructural();
+    iconbtn('📌', shotPinned ? 'unpin shot' : 'pin shot', shotPinned ? 'on' : '', () => {
+      mutate(() => { if (shotPinned) enb.forEach((fi) => P.pinned.delete(P.frames[fi].name)); else enb.forEach((fi) => P.pinned.add(P.frames[fi].name)); }); onStructural();
     }),
   );
-  if (si > 0) {
-    nav.appendChild(tog('merge ↑', '', () => { mutate(() => mergeUp(P, sh.start)); onStructural(); }));
-    if (boundaryState(P, sh.start) !== 'auto') nav.appendChild(tog('reset cut', '', () => { mutate(() => resetBoundary(P, sh.start)); onStructural(); }));
-  }
-  container.appendChild(nav);
+  head.append(titleWrap, shotBtns);
+  container.appendChild(head);
 
+  // ---- filmstrip (bigger thumbs, no per-cell buttons) ----
   const boards = el('div', 'insp-boards');
   for (let f = sh.start; f <= sh.end; f++) {
     const off = isBoardDisabled(P, f);
     const pin = isPinned(P, f);
-    const cell = el('div', 'board-cell' + (off ? ' off' : '') + (f === frameIndex ? ' sel' : ''));
+    const cell = el('div', 'board-cell' + (off ? ' off' : '') + (pin ? ' pinned' : '') + (f === frameIndex ? ' sel' : ''));
     const c = document.createElement('canvas');
-    c.width = 120; c.height = 68; c.className = 'board';
-    c.getContext('2d').drawImage(P.frames[f].thumb, 0, 0, 120, 68);
+    c.width = 200; c.height = 112; c.className = 'board';
+    c.getContext('2d').drawImage(P.frames[f].thumb, 0, 0, 200, 112);
     c.title = P.frames[f].name;
     c.addEventListener('click', () => onGoFrame(f));
     cell.appendChild(c);
-
-    const row = el('div', 'board-row');
-    row.appendChild(mini(off ? 'show' : 'hide', off ? 'enable board' : 'disable board', () => {
-      mutate(() => { if (off) P.boardDisabled.delete(P.frames[f].name); else P.boardDisabled.add(P.frames[f].name); });
-      onStructural();
-    }));
-    row.appendChild(mini(pin ? '📌' : 'pin', pin ? 'unpin board' : 'pin board', () => {
-      mutate(() => { if (pin) P.pinned.delete(P.frames[f].name); else P.pinned.add(P.frames[f].name); });
-      onStructural();
-    }, pin));
-    if (f > sh.start) {
-      row.appendChild(mini('✂', 'cut here — start a new shot at this board', () => { mutate(() => forceCut(P, f)); onGoFrame(f); onStructural(); }));
-    } else if (f > 0 && boundaryState(P, f) === 'forced') {
-      row.appendChild(mini('↺', 'reset this manual cut', () => { mutate(() => resetBoundary(P, f)); onStructural(); }));
-    }
-    if (!off) {
-      const d = document.createElement('input');
-      d.type = 'number'; d.min = '0'; d.step = P.lenUnit === 'frames' ? '1' : '0.05'; d.className = 'wt';
-      d.value = lenToUnit(P, boardDur(P, f));
-      d.title = 'this board’s duration';
-      d.addEventListener('focus', beginGesture);
-      d.addEventListener('input', () => {
-        const v = parseFloat(d.value);
-        if (!isNaN(v) && v > 0) setBoardDur(P, f, unitToSec(P, v));
-        onChange();
-      });
-      d.addEventListener('blur', commitGesture);
-      row.appendChild(d);
-    }
-    cell.appendChild(row);
+    if (pin) { const b = el('span', 'cell-badge pin'); b.textContent = '📌'; cell.appendChild(b); }
+    if (off) { const b = el('span', 'cell-badge off'); b.textContent = 'hidden'; cell.appendChild(b); }
     boards.appendChild(cell);
   }
   container.appendChild(boards);
 
-  const fields = el('div', 'insp-fields');
-  fields.appendChild(field('Name', textInput(m.tag || '', sh.name ? `rename ${sh.name}` : 'shot name / tag',
-    (v) => setShotMeta(P, sh, 'tag', v), onChange)));
+  // ---- selected-board action row (acts on frameIndex) ----
+  const off = isBoardDisabled(P, frameIndex);
+  const pin = isPinned(P, frameIndex);
+  const act = el('div', 'board-actions');
+  const cap = el('span', 'ba-cap'); cap.textContent = 'this board';
+  act.appendChild(cap);
+  act.appendChild(iconbtn(off ? '⊘' : '👁', off ? 'show board (h)' : 'hide board (h)', off ? 'danger' : '', () => {
+    mutate(() => { if (off) P.boardDisabled.delete(P.frames[frameIndex].name); else P.boardDisabled.add(P.frames[frameIndex].name); }); onStructural();
+  }));
+  act.appendChild(iconbtn('📌', pin ? 'unpin board (p)' : 'pin board (p)', pin ? 'on' : '', () => {
+    mutate(() => { if (pin) P.pinned.delete(P.frames[frameIndex].name); else P.pinned.add(P.frames[frameIndex].name); }); onStructural();
+  }));
+  const isStart = isShotStart(P, frameIndex);
+  act.appendChild(iconbtn('✂', isStart ? 'merge into previous shot (c)' : 'cut — new shot here (c)', (boundaryState(P, frameIndex) !== 'auto' ? 'on ' : '') + 'big', () => {
+    mutate(() => { if (isStart) mergeUp(P, frameIndex); else forceCut(P, frameIndex); }); onStructural();
+  }, frameIndex === 0));
+  if (boundaryState(P, frameIndex) !== 'auto') act.appendChild(iconbtn('↺', 'reset this cut to auto', '', () => { mutate(() => resetBoundary(P, frameIndex)); onStructural(); }));
+  if (!off) {
+    const d = document.createElement('input');
+    d.type = 'number'; d.min = '0'; d.step = P.lenUnit === 'frames' ? '1' : '0.05'; d.className = 'ba-dur';
+    d.value = lenToUnit(P, boardDur(P, frameIndex)); d.title = 'duration of this board';
+    d.addEventListener('focus', beginGesture);
+    d.addEventListener('input', () => { const v = parseFloat(d.value); if (!isNaN(v) && v > 0) setBoardDur(P, frameIndex, unitToSec(P, v)); onChange(); });
+    d.addEventListener('blur', commitGesture);
+    const u = el('span', 'ba-unit'); u.textContent = P.lenUnit === 'frames' ? 'f' : 's';
+    act.append(d, u);
+  }
+  container.appendChild(act);
 
-  const lenWrap = el('div', 'len-wrap');
-  const len = document.createElement('input');
-  len.type = 'number'; len.min = '0'; len.step = P.lenUnit === 'frames' ? '1' : '0.1';
-  len.value = lenToUnit(P, shotLenSec(P, sh));
-  len.disabled = shotOff;
-  len.title = 'shot total — scales its boards proportionally';
-  len.addEventListener('focus', beginGesture);
-  len.addEventListener('input', () => { const v = parseFloat(len.value); if (!isNaN(v) && v > 0) setShotLen(P, sh, unitToSec(P, v)); onChange(); });
-  len.addEventListener('blur', commitGesture);
-  const unit = el('span', 'unit'); unit.textContent = P.lenUnit === 'frames' ? 'frames' : 'sec';
-  lenWrap.append(len, unit);
-  fields.appendChild(field('Shot length (total)', lenWrap));
+  // ---- Shot section ----
+  const shotSec = section('Shot');
+
+  const nameRow = el('div', 'name-row');
+  const nameIn = document.createElement('input');
+  nameIn.value = m.tag || ''; nameIn.placeholder = origName; nameIn.title = 'rename (blank = original)';
+  nameIn.addEventListener('focus', beginGesture);
+  nameIn.addEventListener('input', () => { setShotMeta(P, sh, 'tag', nameIn.value); onChange(); });
+  nameIn.addEventListener('blur', commitGesture);
+  const revert = iconbtn('↺', 'revert to original name', '', () => { mutate(() => setShotMeta(P, sh, 'tag', '')); onStructural(); });
+  nameRow.append(nameIn, revert);
+  shotSec.append(field('Name', nameRow, `original: ${origName}`));
+
+  // length: read-only, click to edit
+  const lenField = field('Length (total)', editableNumber(
+    () => lenToUnit(P, shotLenSec(P, sh)),
+    (v) => setShotLen(P, sh, unitToSec(P, v)),
+    P.lenUnit === 'frames' ? 'frames' : 'sec', onChange, shotOff));
+  shotSec.append(lenField);
 
   const fitSel = document.createElement('select');
   [['default', 'default (global)'], ['cover', 'cover (crop)'], ['contain', 'contain (bars)'], ['width', 'fit width'], ['height', 'fit height']].forEach(([v, lbl]) => { const o = document.createElement('option'); o.value = v; o.textContent = lbl; fitSel.appendChild(o); });
   fitSel.value = P.boardFit.get(P.frames[frameIndex].name) || 'default';
   fitSel.onchange = () => { mutate(() => setBoardFit(P, frameIndex, fitSel.value)); refreshPreview && refreshPreview(); };
-  fields.appendChild(field('Fit (this board)', fitSel));
+  shotSec.append(field('Fit (this board)', fitSel));
+  container.appendChild(shotSec);
 
-  const taskHead = el('div', 'field-label');
-  taskHead.innerHTML = 'Tasks <button class="mini addtask" id="addShotTask" title="add a global shot task">+ task</button>';
+  // ---- Tasks section (clearly separated) ----
+  const taskSec = section('Tasks');
+  const addBtn = el('button', 'sec-add'); addBtn.textContent = '+ task'; addBtn.title = 'add a global shot task';
+  addBtn.onclick = () => { const name = prompt('New shot task (e.g. layout, fx):'); if (name) { mutate(() => addShotTask(P, name)); onStructural(); } };
+  taskSec.querySelector('.sec-head').appendChild(addBtn);
   const stageWrap = el('div', 'insp-stages');
   P.shotTasks.forEach((s) => {
     const cell = el('div', 'stage-cell');
-    const lab = el('label', ''); lab.textContent = s;
-    lab.title = 'double-click to remove this task column';
+    const lab = el('label', ''); lab.textContent = s; lab.title = 'double-click to remove this task';
     lab.addEventListener('dblclick', () => { if (confirm(`Remove shot task "${s}" everywhere?`)) { mutate(() => removeShotTask(P, s)); onStructural(); } });
     const inp = document.createElement('input'); inp.type = 'number'; inp.min = '0';
     const tv = m.taskVals || m.stageVals || {};
     inp.value = (tv && tv[s] != null) ? tv[s] : '';
     inp.addEventListener('focus', beginGesture);
-    inp.addEventListener('input', () => {
-      const mm = shotMeta(P, sh); const sv = { ...(mm.taskVals || mm.stageVals || {}) };
-      sv[s] = inp.value === '' ? null : +inp.value;
-      setShotMeta(P, sh, 'taskVals', sv); onChange();
-    });
+    inp.addEventListener('input', () => { const mm = shotMeta(P, sh); const sv = { ...(mm.taskVals || mm.stageVals || {}) }; sv[s] = inp.value === '' ? null : +inp.value; setShotMeta(P, sh, 'taskVals', sv); onChange(); });
     inp.addEventListener('blur', commitGesture);
     cell.append(lab, inp);
     stageWrap.appendChild(cell);
   });
-  const taskField = el('div', 'field'); taskField.append(taskHead, stageWrap);
-  taskField.querySelector('#addShotTask').addEventListener('click', () => {
-    const name = prompt('New shot task name (e.g. layout, fx):'); if (!name) return;
-    mutate(() => addShotTask(P, name)); onStructural();
-  });
-  fields.appendChild(taskField);
+  taskSec.append(stageWrap);
+  container.appendChild(taskSec);
 
+  // ---- Notes ----
+  const noteSec = section('Notes');
   const note = document.createElement('textarea');
   note.value = m.note || ''; note.placeholder = 'notes…'; note.rows = 3;
   note.addEventListener('focus', beginGesture);
   note.addEventListener('input', () => { setShotMeta(P, sh, 'note', note.value); onChange(); });
   note.addEventListener('blur', commitGesture);
-  fields.appendChild(field('Notes', note));
-
-  container.appendChild(fields);
+  noteSec.append(note);
+  container.appendChild(noteSec);
 }
 
+// ---- helpers ----
 function el(tag, cls) { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
-function btn(txt, fn, disabled) { const b = el('button', 'btn ghost sm'); b.textContent = txt; b.onclick = fn; b.disabled = !!disabled; return b; }
-function tog(txt, extra, fn) { const b = el('button', 'btn ghost sm ' + extra); b.textContent = txt; b.onclick = fn; return b; }
-function mini(txt, title, fn, active) { const b = el('button', 'mini' + (active ? ' active' : '')); b.textContent = txt; b.title = title; b.onclick = fn; return b; }
-function textInput(val, ph, set, onChange) {
-  const i = document.createElement('input');
-  i.value = val; i.placeholder = ph;
-  i.addEventListener('focus', beginGesture);
-  i.addEventListener('input', () => { set(i.value); onChange(); });
-  i.addEventListener('blur', commitGesture);
-  return i;
+function iconbtn(glyph, title, extra, fn, disabled) { const b = el('button', 'iconbtn ' + (extra || '')); b.textContent = glyph; b.title = title; b.onclick = fn; b.disabled = !!disabled; return b; }
+function section(title) {
+  const s = el('div', 'insp-section');
+  const h = el('div', 'sec-head'); const t = el('span', 'sec-title'); t.textContent = title; h.appendChild(t);
+  s.appendChild(h);
+  return s;
 }
-function field(label, node) { const w = el('div', 'field'); const l = el('div', 'field-label'); l.textContent = label; w.append(l, node); return w; }
+function field(label, node, hint) {
+  const w = el('div', 'field');
+  const l = el('div', 'field-label'); l.textContent = label; w.appendChild(l);
+  w.appendChild(node);
+  if (hint) { const h = el('div', 'field-hint'); h.textContent = hint; w.appendChild(h); }
+  return w;
+}
+// read-only value that becomes an input on click
+function editableNumber(getVal, setVal, unitLabel, onChange, disabled) {
+  const wrap = el('div', 'editnum');
+  const span = el('span', 'editnum-val'); span.textContent = getVal() + ' ' + unitLabel;
+  if (!disabled) { span.title = 'click to edit'; span.onclick = () => swap(); } else span.classList.add('disabled');
+  wrap.appendChild(span);
+  function swap() {
+    const inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.step = unitLabel === 'frames' ? '1' : '0.1';
+    inp.value = getVal(); inp.className = 'editnum-input';
+    wrap.replaceChild(inp, wrap.firstChild); inp.focus(); inp.select();
+    beginGesture();
+    const done = () => { const v = parseFloat(inp.value); if (!isNaN(v) && v > 0) { setVal(v); onChange(); } commitGesture(); const s = el('span', 'editnum-val'); s.textContent = getVal() + ' ' + unitLabel; s.title = 'click to edit'; s.onclick = swap; wrap.replaceChild(s, inp); };
+    inp.addEventListener('blur', done);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
+  }
+  return wrap;
+}
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
