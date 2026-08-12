@@ -36,6 +36,7 @@ function toggleAnnotate() {
 function enterAnnotate() {
   exitAnnotate();
   const cvEl = $('previewCanvas'); if (!cvEl || !cvEl.width) return;
+  if (!imgCache.get(cur)) { drawPreview(cur).then(() => { if (annoMode) enterAnnotate(); }); return; }
   annoCtrl = createAnnotator($('previewWrap'), cvEl, getAnnos(P, cur), (strokes) => {
     mutate(() => setAnnos(P, cur, strokes));
     const el = slotEls.get(cur); if (el) el.classList.toggle('has-anno', strokes.length > 0);

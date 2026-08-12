@@ -57,7 +57,7 @@ export function drawAnnos(ctx, strokes, rect) {
 // strokes: initial array (mutated copy returned via onCommit). Returns controller.
 export function createAnnotator(host, imageEl, strokes, onCommit, opts = {}) {
   let cur = (strokes || []).slice();
-  let tool = 'select', color = ANNO_COLORS[0];
+  let tool = 'arrow', color = ANNO_COLORS[0];
   const getImageRect = opts.getImageRect || null;
   const canvas = document.createElement('canvas');
   canvas.className = 'anno-canvas';
@@ -177,11 +177,11 @@ export function createAnnotator(host, imageEl, strokes, onCommit, opts = {}) {
 // A reusable toolbar element for an annotator controller.
 export function annotatorToolbar(ctrl) {
   const bar = document.createElement('div'); bar.className = 'anno-bar';
-  const tools = [['select', '▸'], ['arrow', '↗'], ['box', '▢'], ['ellipse', '◯'], ['free', '✎'], ['text', 'T']];
+  const tools = [['arrow', '↗'], ['select', '▸'], ['box', '▢'], ['ellipse', '◯'], ['free', '✎'], ['text', 'T']];
   let curBtn = null;
   tools.forEach(([t, label], i) => {
     const b = document.createElement('button'); b.className = 'anno-tool'; b.textContent = label; b.title = t === 'select' ? 'select / move / resize' : t;
-    if (i === 0) { b.classList.add('on'); curBtn = b; ctrl.setTool('select'); }
+    if (i === 0) { b.classList.add('on'); curBtn = b; ctrl.setTool('arrow'); }
     b.onclick = () => { ctrl.setTool(t); if (curBtn) curBtn.classList.remove('on'); b.classList.add('on'); curBtn = b; };
     bar.appendChild(b);
   });
