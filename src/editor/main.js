@@ -41,7 +41,7 @@ function enterAnnotate() {
     mutate(() => setAnnos(P, cur, strokes));
     const el = slotEls.get(cur); if (el) el.classList.toggle('has-anno', strokes.length > 0);
     refreshUndoButtons();
-  }, { getImageRect: (cw, ch) => { const im = imgCache.get(cur); if (!im) return { x: 0, y: 0, w: cw, h: ch }; return fitRect(getBoardFit(P, cur), im.naturalWidth, im.naturalHeight, cw, ch); } });
+  }, { getImageRect: (cw, ch) => { const im = imgCache.get(cur); if (!im) return { x: 0, y: 0, w: cw, h: ch }; const r = fitRect(getBoardFit(P, cur), im.naturalWidth, im.naturalHeight, cw, ch); return { x: r.dx, y: r.dy, w: r.dw, h: r.dh }; } });
   const bar = annotatorToolbar(annoCtrl); bar.id = 'annoBarInner';
   $('annoBar').innerHTML = ''; $('annoBar').appendChild(bar); $('annoBar').classList.remove('hidden');
 }
