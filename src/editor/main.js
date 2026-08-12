@@ -37,7 +37,7 @@ function enterAnnotate() {
   exitAnnotate();
   const cvEl = $('previewCanvas'); if (!cvEl || !cvEl.width) return;
   if (!imgCache.get(cur)) { drawPreview(cur).then(() => { if (annoMode) enterAnnotate(); }); return; }
-  annoCtrl = createAnnotator($('previewWrap'), cvEl, getAnnos(P, cur), (strokes) => {
+  annoCtrl = createAnnotator($('previewStage'), cvEl, getAnnos(P, cur), (strokes) => {
     mutate(() => setAnnos(P, cur, strokes));
     const el = slotEls.get(cur); if (el) el.classList.toggle('has-anno', strokes.length > 0);
     refreshUndoButtons();
@@ -102,7 +102,7 @@ const imgCache = new Map();
 function getImg(fi) { return new Promise((res) => { if (imgCache.has(fi)) return res(imgCache.get(fi)); const im = new Image(); im.onload = () => { imgCache.set(fi, im); res(im); }; im.onerror = () => res(null); im.src = P.frames[fi].url; }); }
 let previewFi = -1;
 function layoutPreviewSize() {
-  const cv = $('previewCanvas'); if (!cv) return; const box = cv.parentElement;
+  const cv = $('previewCanvas'); if (!cv) return; const box = $('previewWrap');
   const bw = box.clientWidth, bh = box.clientHeight; if (!bw || !bh) return;
   let w = bw, h = bw / resAspect; if (h > bh) { h = bh; w = bh * resAspect; }
   w = Math.round(w * 0.96); h = Math.round(h * 0.96);
