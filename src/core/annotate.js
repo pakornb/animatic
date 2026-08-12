@@ -57,7 +57,7 @@ export function drawAnnos(ctx, strokes, rect) {
 // strokes: initial array (mutated copy returned via onCommit). Returns controller.
 export function createAnnotator(host, imageEl, strokes, onCommit, opts = {}) {
   let cur = (strokes || []).slice();
-  let tool = 'arrow', color = ANNO_COLORS[0];
+  let tool = 'free', color = ANNO_COLORS[0];
   const getImageRect = opts.getImageRect || null;
   const canvas = document.createElement('canvas');
   canvas.className = 'anno-canvas';
@@ -65,11 +65,12 @@ export function createAnnotator(host, imageEl, strokes, onCommit, opts = {}) {
   let rect = { x: 0, y: 0, w: 1, h: 1 }; // image draw-rect in canvas px
 
   function place() {
-    const r = contentRect(imageEl);
-    canvas.style.left = imageEl.offsetLeft + r.x + 'px';
-    canvas.style.top = imageEl.offsetTop + r.y + 'px';
-    canvas.width = Math.max(1, Math.round(r.w)); canvas.height = Math.max(1, Math.round(r.h));
-    canvas.style.width = r.w + 'px'; canvas.style.height = r.h + 'px';
+    const w = imageEl.offsetWidth || imageEl.clientWidth || 1;
+    const h = imageEl.offsetHeight || imageEl.clientHeight || 1;
+    canvas.style.left = imageEl.offsetLeft + 'px';
+    canvas.style.top = imageEl.offsetTop + 'px';
+    canvas.width = Math.max(1, Math.round(w)); canvas.height = Math.max(1, Math.round(h));
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
     rect = getImageRect ? getImageRect(canvas.width, canvas.height) : { x: 0, y: 0, w: canvas.width, h: canvas.height };
     redraw();
   }
@@ -177,11 +178,11 @@ export function createAnnotator(host, imageEl, strokes, onCommit, opts = {}) {
 // A reusable toolbar element for an annotator controller.
 export function annotatorToolbar(ctrl) {
   const bar = document.createElement('div'); bar.className = 'anno-bar';
-  const tools = [['arrow', '↗'], ['select', '▸'], ['box', '▢'], ['ellipse', '◯'], ['free', '✎'], ['text', 'T']];
+  const tools = [['free', '✎'], ['arrow', '↗'], ['select', '▸'], ['box', '▢'], ['ellipse', '◯'], ['text', 'T']];
   let curBtn = null;
   tools.forEach(([t, label], i) => {
-    const b = document.createElement('button'); b.className = 'anno-tool'; b.textContent = label; b.title = t === 'select' ? 'select / move / resize' : t;
-    if (i === 0) { b.classList.add('on'); curBtn = b; ctrl.setTool('arrow'); }
+    const b = document.createElement('button'); b.className = 'anno-tool'; b.textContent = label; b.title = t === 'select' ? 'select / move / resize' : t === 'free' ? 'pen' : t;
+    if (i === 0) { b.classList.add('on'); curBtn = b; ctrl.setTool('free'); }
     b.onclick = () => { ctrl.setTool(t); if (curBtn) curBtn.classList.remove('on'); b.classList.add('on'); curBtn = b; };
     bar.appendChild(b);
   });
